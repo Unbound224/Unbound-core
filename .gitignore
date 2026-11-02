@@ -1,0 +1,18 @@
+# secrets
+.env
+.env.local
+*.pem
+*.key
+*.seed
+# build
+node_modules/
+.next/
+dist/
+build/
+.dart_tool/
+.flutter-plugins*
+coverage/
+__pycache__/
+target/
+*.log
+.DS_Store

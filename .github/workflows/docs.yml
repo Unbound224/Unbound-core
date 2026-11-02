@@ -1,0 +1,14 @@
+name: Documentation integrity
+on: [push, pull_request]
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate scaffold metadata
+        run: |
+          test -s README.md
+          test -s AGENTS.md
+          test -s docs/PROJECT_MASTER.md
+          test -s docs/ARCHITECTURE.md
+          test -s brand/icon.svg

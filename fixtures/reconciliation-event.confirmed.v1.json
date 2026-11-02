@@ -1,0 +1,15 @@
+{
+  "id": "evt_bad88b8567c4c16b3436c937d3ed71d1",
+  "sourceRepo": "unbound-stellar",
+  "schemaVersion": "1.0",
+  "network": "TESTNET",
+  "ledgerCursor": "42",
+  "entityRef": {
+    "type": "transaction",
+    "ref": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "status": "CONFIRMED",
+  "observedAt": "2026-11-02T12:00:00.000Z",
+  "ledger": 1007,
+  "amountOutActual": "72.0000000"
+}

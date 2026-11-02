@@ -88,10 +88,20 @@ export class WalletService {
   }
 
   /** DEV/TEST ONLY: mint a session for a non-wallet actor (merchant/admin) without any credentials. */
-  async mintDevSession(actor: Actor): Promise<string> {
+  async openSession(actor: Actor): Promise<string> {
     const token = randomBytes(32).toString('hex');
     await this.sessions.put({ id: hash(token), actor, expiresAt: this.clock.now().getTime() + SESSION_TTL_MS });
     return token;
+  }
+
+  async revokeSession(token: string): Promise<void> {
+    const s = await this.sessions.get(hash(token));
+    if (s) await this.sessions.put({ ...s, expiresAt: 0 });
+  }
+
+  /** TEST/DEV ONLY: mint a session for an arbitrary actor without credentials. Not reachable over HTTP. */
+  async mintDevSession(actor: Actor): Promise<string> {
+    return this.openSession(actor);
   }
 
   async authenticate(token: string | undefined): Promise<Actor | undefined> {

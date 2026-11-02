@@ -15,6 +15,7 @@ interface Ctx {
   query: URLSearchParams;
   body: unknown;
   idempotencyKey: string;
+  token: string | undefined;
 }
 type Handler = (c: Ctx) => Promise<{ status: number; body: unknown }>;
 interface Route {
@@ -127,6 +128,30 @@ const routes: Route[] = [
     pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/confirm$/,
     handler: async (c) => ok(publicRedemption(await c.app.redemption.merchantConfirm(c.actor, c.params[0]!, c.requestId))),
   },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/auth\/register$/,
+    handler: async (c) => ok(await c.app.auth.registerMerchant(c.body, c.requestId), 201),
+  },
+  { method: 'POST', pattern: /^\/v1\/auth\/login$/, handler: async (c) => ok(await c.app.auth.login(c.body, c.requestId)) },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/auth\/logout$/,
+    handler: async (c) => {
+      await c.app.auth.logout(c.token);
+      return ok({ ok: true });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/accounts$/,
+    handler: async (c) => {
+      const b = asObj(c.body);
+      const role = b.role === 'admin' ? 'admin' : b.role === 'merchant' ? 'merchant' : undefined;
+      if (!role) throw new ApiError('VALIDATION_FAILED', 'role must be admin or merchant');
+      return ok(await c.app.auth.createAccount(c.actor, { email: b.email, password: b.password }, role, c.requestId), 201);
+    },
+  },
   // --- additive endpoints (not in the initial SRD list; documented in openapi) ---
   {
     method: 'POST',
@@ -215,12 +240,13 @@ async function handle(app: App, req: IncomingMessage, res: ServerResponse): Prom
     const ik = req.headers['idempotency-key'];
     const out = await hit.r.handler({
       app,
-      actor: await app.wallets.authenticate(token),
+      actor: await app.authenticate(token),
       requestId,
       params: hit.m.slice(1),
       query: url.searchParams,
       body: await readBody(req),
       idempotencyKey: typeof ik === 'string' ? ik : '',
+      token,
     });
     send(out.status, out.body);
   } catch (e) {

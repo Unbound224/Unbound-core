@@ -1,0 +1,6 @@
+{
+  "balances": [
+    { "asset": { "code": "XLM", "issuer": null }, "balance": "9.9999900", "isAuthorized": true },
+    { "asset": { "code": "SHOP", "issuer": "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H" }, "balance": "20.0000000", "isAuthorized": true }
+  ]
+}

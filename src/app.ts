@@ -7,6 +7,7 @@ import { OperationsGuard } from './modules/reconciliation/guard.js';
 import { ReconciliationService } from './modules/reconciliation/service.js';
 import { RedemptionService } from './modules/redemption/service.js';
 import { InMemoryStorage, type Storage } from './persistence/storage.js';
+import { DisputeService } from './modules/disputes/service.js';
 import { PortfolioService } from './modules/portfolio/service.js';
 import { AuthService } from './modules/auth/service.js';
 import type { Actor } from './common/auth.js';
@@ -26,6 +27,7 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
   const exchange = new ExchangeService(common);
   const redemption = new RedemptionService(common);
   const reconciliation = new ReconciliationService({ clock, audit, guard, storage });
+  const disputes = new DisputeService({ clock, audit, exchange, redemption, storage });
   reconciliation.register((o, r) => exchange.onObservation(o, r));
   reconciliation.register((o, r) => redemption.onObservation(o, r));
   /** Resolves a bearer token to an actor; merchant accounts get their CURRENT merchantId (never stale). */
@@ -35,7 +37,7 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
     const mine = (await issuers.merchants.find((m) => m.ownerActorId === actor.id && m.status !== 'REJECTED'))[0];
     return mine ? { ...actor, merchantId: mine.id } : actor;
   }
-  return { portfolio, authenticate, auth, storage, clock, audit, guard, wallets, issuers, exchange, redemption, reconciliation };
+  return { disputes, portfolio, authenticate, auth, storage, clock, audit, guard, wallets, issuers, exchange, redemption, reconciliation };
 }
 
 export type App = ReturnType<typeof createApp>;

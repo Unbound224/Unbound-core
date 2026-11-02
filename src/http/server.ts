@@ -153,6 +153,12 @@ const routes: Route[] = [
       return ok(await c.app.auth.createAccount(c.actor, { email: b.email, password: b.password }, role, c.requestId), 201);
     },
   },
+  { method: 'POST', pattern: /^\/v1\/disputes$/, handler: async (c) => ok(await c.app.disputes.open(c.actor, c.body, c.requestId), 201) },
+  { method: 'GET', pattern: /^\/v1\/disputes$/, handler: async (c) => ok({ disputes: await c.app.disputes.list(c.actor) }) },
+  { method: 'GET', pattern: /^\/v1\/disputes\/([\w-]+)$/, handler: async (c) => ok(await c.app.disputes.get(c.actor, c.params[0]!)) },
+  { method: 'POST', pattern: /^\/v1\/disputes\/([\w-]+)\/messages$/, handler: async (c) => ok(await c.app.disputes.addMessage(c.actor, c.params[0]!, c.body, c.requestId), 201) },
+  { method: 'POST', pattern: /^\/v1\/disputes\/([\w-]+)\/withdraw$/, handler: async (c) => ok(await c.app.disputes.withdraw(c.actor, c.params[0]!, c.requestId)) },
+  { method: 'POST', pattern: /^\/v1\/admin\/disputes\/([\w-]+)\/resolve$/, handler: async (c) => ok(await c.app.disputes.resolve(c.actor, c.params[0]!, c.body, c.requestId)) },
   // --- additive endpoints (not in the initial SRD list; documented in openapi) ---
   {
     method: 'POST',

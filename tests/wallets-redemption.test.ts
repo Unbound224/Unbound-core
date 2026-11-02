@@ -6,16 +6,16 @@ describe('wallet challenge/verify', () => {
   it('issues a session only for a valid signature, and only once per challenge', async () => {
     const w = makeWorld();
     const kp = Keypair.random();
-    const ch = w.app.wallets.createChallenge(kp.publicKey());
+    const ch = await w.app.wallets.createChallenge(kp.publicKey());
     const sig = Buffer.from(kp.sign(Buffer.from(ch.message))).toString('base64');
     const v = await w.app.wallets.verifyChallenge(ch.challengeId, sig, 'r');
-    expect(w.app.wallets.authenticate(v.token)).toMatchObject({ role: 'user', id: v.actor.id });
+    expect(await w.app.wallets.authenticate(v.token)).toMatchObject({ role: 'user', id: v.actor.id });
     await expect(w.app.wallets.verifyChallenge(ch.challengeId, sig, 'r')).rejects.toMatchObject({ code: 'CHALLENGE_INVALID' });
   });
   it('rejects a signature from a different key and burns the challenge', async () => {
     const w = makeWorld();
     const kp = Keypair.random();
-    const ch = w.app.wallets.createChallenge(kp.publicKey());
+    const ch = await w.app.wallets.createChallenge(kp.publicKey());
     const bad = Buffer.from(Keypair.random().sign(Buffer.from(ch.message))).toString('base64');
     await expect(w.app.wallets.verifyChallenge(ch.challengeId, bad, 'r')).rejects.toMatchObject({ code: 'CHALLENGE_INVALID' });
     const good = Buffer.from(kp.sign(Buffer.from(ch.message))).toString('base64');
@@ -24,20 +24,20 @@ describe('wallet challenge/verify', () => {
   it('rejects expired challenges, invalid keys and unknown tokens', async () => {
     const w = makeWorld();
     const kp = Keypair.random();
-    const ch = w.app.wallets.createChallenge(kp.publicKey());
+    const ch = await w.app.wallets.createChallenge(kp.publicKey());
     w.t.ms += 5 * 60_000 + 1;
     const sig = Buffer.from(kp.sign(Buffer.from(ch.message))).toString('base64');
     await expect(w.app.wallets.verifyChallenge(ch.challengeId, sig, 'r')).rejects.toMatchObject({ code: 'CHALLENGE_INVALID' });
-    expect(() => w.app.wallets.createChallenge('GNOTAKEY')).toThrow(/invalid Stellar public key/);
-    expect(w.app.wallets.authenticate('nope')).toBeUndefined();
-    expect(w.app.wallets.authenticate(undefined)).toBeUndefined();
+    await expect(w.app.wallets.createChallenge('GNOTAKEY')).rejects.toThrow(/invalid Stellar public key/);
+    expect(await w.app.wallets.authenticate('nope')).toBeUndefined();
+    expect(await w.app.wallets.authenticate(undefined)).toBeUndefined();
   });
   it('the same wallet always maps to the same user', async () => {
     const w = makeWorld();
     const kp = Keypair.random();
     const ids = new Set<string>();
     for (let i = 0; i < 2; i++) {
-      const ch = w.app.wallets.createChallenge(kp.publicKey());
+      const ch = await w.app.wallets.createChallenge(kp.publicKey());
       const v = await w.app.wallets.verifyChallenge(ch.challengeId, Buffer.from(kp.sign(Buffer.from(ch.message))).toString('base64'), 'r');
       ids.add(v.actor.id);
     }

@@ -1,5 +1,6 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import { createApp } from '../src/app.js';
+import type { Storage } from '../src/persistence/storage.js';
 import type { Actor } from '../src/common/auth.js';
 import type { Clock } from '../src/common/ids.js';
 import { canonicalPolicyBytes, type RedemptionPolicy, type UnsignedPolicy } from '../src/modules/issuers/policy.js';
@@ -8,11 +9,11 @@ import { FakeStellarGateway, signFake } from '../src/testing/fake-gateway.js';
 import { createHash } from 'node:crypto';
 
 /** All keys are throwaway and generated per run. */
-export function makeWorld() {
+export function makeWorld(storage?: Storage) {
   const t = { ms: Date.UTC(2026, 10, 2, 12, 0, 0) };
   const clock: Clock = { now: () => new Date(t.ms) };
   const gateway = new FakeStellarGateway(() => t.ms);
-  const app = createApp({ gateway, clock });
+  const app = createApp({ gateway, clock, ...(storage ? { storage } : {}) });
   const admin: Actor = { id: 'adm_1', role: 'admin' };
   const issuerKp = Keypair.random();
   const targetIssuerKp = Keypair.random();
@@ -57,7 +58,7 @@ export function makeWorld() {
   /** Real challenge/verify flow with a fresh keypair. */
   async function newUser() {
     const kp = Keypair.random();
-    const ch = app.wallets.createChallenge(kp.publicKey());
+    const ch = await app.wallets.createChallenge(kp.publicKey());
     const sig = Buffer.from(kp.sign(Buffer.from(ch.message))).toString('base64');
     const v = await app.wallets.verifyChallenge(ch.challengeId, sig, rid());
     return { kp, actor: v.actor, token: v.token, publicKey: kp.publicKey() };

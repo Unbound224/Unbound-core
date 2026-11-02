@@ -3,7 +3,8 @@ import { requireRole, type Actor } from '../../common/auth.js';
 import type { AuditLog } from '../../common/audit.js';
 import { ApiError } from '../../common/errors.js';
 import { newId, type Clock } from '../../common/ids.js';
-import { InMemoryRepository, type Repository } from '../../common/repository.js';
+import type { Repository } from '../../common/repository.js';
+import type { Storage } from '../../persistence/storage.js';
 import { validatePolicy, type RedemptionPolicy } from './policy.js';
 
 export type MerchantStatus = 'APPLIED' | 'VERIFIED' | 'REJECTED' | 'REVOKED';
@@ -72,16 +73,22 @@ export const ApplySchema = z
 const key = (a: AssetRef) => `${a.code}:${a.issuer}`;
 
 export class IssuerService {
-  readonly merchants: Repository<Merchant> = new InMemoryRepository<Merchant>();
-  readonly verifications: Repository<IssuerVerification> = new InMemoryRepository<IssuerVerification>();
-  readonly programs: Repository<AssetProgram> = new InMemoryRepository<AssetProgram>();
+  readonly merchants: Repository<Merchant>;
+  readonly verifications: Repository<IssuerVerification>;
+  readonly programs: Repository<AssetProgram>;
   /** admin-curated non-credit assets (e.g. a Testnet stable asset) that may be a swap TARGET */
-  private readonly supportedTargets = new Map<string, AssetRef>();
+  private readonly targets: Repository<AssetRef & { id: string }>;
 
   constructor(
     private readonly clock: Clock,
     private readonly audit: AuditLog,
-  ) {}
+    storage: Storage,
+  ) {
+    this.merchants = storage.repo<Merchant>('merchants');
+    this.verifications = storage.repo<IssuerVerification>('issuer_verifications');
+    this.programs = storage.repo<AssetProgram>('asset_programs');
+    this.targets = storage.repo<AssetRef & { id: string }>('supported_targets');
+  }
 
   async apply(actor: Actor | undefined, input: unknown, requestId: string): Promise<Merchant> {
     const a = requireRole(actor, 'merchant', 'user', 'admin');
@@ -162,7 +169,7 @@ export class IssuerService {
 
   async addSupportedTarget(actor: Actor | undefined, asset: AssetRef, requestId: string): Promise<void> {
     const admin = requireRole(actor, 'admin');
-    this.supportedTargets.set(key(asset), asset);
+    await this.targets.put({ id: key(asset), code: asset.code, issuer: asset.issuer });
     await this.audit.record(admin, 'asset', 'TARGET_ADDED', key(asset), requestId);
   }
 
@@ -170,7 +177,7 @@ export class IssuerService {
   async eligibility(asset: AssetRef): Promise<Eligibility> {
     const program = (await this.programs.find((p) => p.assetCode === asset.code && p.issuerPublicKey === asset.issuer))[0];
     if (!program) {
-      if (this.supportedTargets.has(key(asset))) return { eligible: true, reasons: [], kind: 'SUPPORTED_TARGET' };
+      if (await this.targets.get(key(asset))) return { eligible: true, reasons: [], kind: 'SUPPORTED_TARGET' };
       return { eligible: false, reasons: ['ASSET_UNKNOWN'] };
     }
     const reasons: EligibilityReason[] = [];
@@ -194,7 +201,8 @@ export class IssuerService {
       const e = await this.eligibility({ code: p.assetCode, issuer: p.issuerPublicKey });
       if (e.eligible) out.push({ code: p.assetCode, issuer: p.issuerPublicKey });
     }
-    return [...out, ...this.supportedTargets.values()];
+    const targets = (await this.targets.list()).map((t) => ({ code: t.code, issuer: t.issuer }));
+    return [...out, ...targets];
   }
 
   async listAssets(filter: { issuer?: string } = {}): Promise<AssetProgram[]> {

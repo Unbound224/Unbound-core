@@ -1,6 +1,6 @@
 import { newId, type Clock } from './ids.js';
 import type { Actor } from './auth.js';
-import { InMemoryRepository, type Repository } from './repository.js';
+import type { Repository } from './repository.js';
 
 export interface AuditEvent {
   id: string;
@@ -23,9 +23,10 @@ const FORBIDDEN_KEYS = /secret|seed|private|mnemonic|signedxdr|password|token/i;
  */
 export class AuditLog {
   private seq = 0;
+  private seeded = false;
   constructor(
     private readonly clock: Clock,
-    private readonly repo: Repository<AuditEvent> = new InMemoryRepository<AuditEvent>(),
+    private readonly repo: Repository<AuditEvent>,
   ) {}
 
   async record(
@@ -38,6 +39,11 @@ export class AuditLog {
   ): Promise<AuditEvent> {
     for (const k of Object.keys(detail ?? {})) {
       if (FORBIDDEN_KEYS.test(k)) throw new Error(`audit detail key "${k}" is not allowed`);
+    }
+    if (!this.seeded) {
+      // continue the sequence after a restart
+      this.seq = Math.max(0, ...(await this.repo.list()).map((e) => e.seq));
+      this.seeded = true;
     }
     const ev: AuditEvent = {
       id: newId('aud'),

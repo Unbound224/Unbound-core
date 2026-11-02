@@ -1,7 +1,8 @@
 import type { AuditLog } from '../../common/audit.js';
 import { ApiError } from '../../common/errors.js';
 import type { Clock } from '../../common/ids.js';
-import { InMemoryRepository, type Repository } from '../../common/repository.js';
+import type { Repository } from '../../common/repository.js';
+import type { Storage } from '../../persistence/storage.js';
 import { ReconciliationEventSchema } from './contract.js';
 import type { OperationsGuard } from './guard.js';
 
@@ -27,12 +28,14 @@ export type IngestResult = { duplicate: true; observation: LedgerObservation } |
  * replayed). Validation is strict and fail-closed; ingest is idempotent on event id.
  */
 export class ReconciliationService {
-  readonly observations: Repository<LedgerObservation> = new InMemoryRepository<LedgerObservation>();
+  readonly observations: Repository<LedgerObservation>;
   private readonly handlers: ObservationHandler[] = [];
 
   constructor(
-    private readonly deps: { clock: Clock; audit: AuditLog; guard: OperationsGuard },
-  ) {}
+    private readonly deps: { clock: Clock; audit: AuditLog; guard: OperationsGuard; storage: Storage },
+  ) {
+    this.observations = deps.storage.repo<LedgerObservation>('ledger_observations');
+  }
 
   register(handler: ObservationHandler): void {
     this.handlers.push(handler);

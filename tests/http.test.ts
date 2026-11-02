@@ -102,7 +102,7 @@ describe('HTTP v1 (in-process server, FakeStellarGateway)', () => {
     const { intent } = await w.readyIntent(user);
     w.gateway.submitMode = 'timeout-after-apply';
     await call('POST', `/v1/exchange/intents/${intent.id}/submit`, { token: user.token, key: 'http-submit-03', body: { signedXdr: w.signFake(intent.unsignedXdr!) } });
-    const adminToken = w.app.wallets.mintDevSession(w.admin);
+    const adminToken = await w.app.wallets.mintDevSession(w.admin);
     const ev = w.eventFor(intent.txHash!, 'CONFIRMED');
     const first = await call('POST', '/v1/admin/ledger-events', { token: adminToken, body: ev });
     const second = await call('POST', '/v1/admin/ledger-events', { token: adminToken, body: ev });
@@ -114,7 +114,7 @@ describe('HTTP v1 (in-process server, FakeStellarGateway)', () => {
     const { w, call } = await boot();
     const { merchant } = await w.onboardMerchant();
     const user = await w.newUser();
-    const merchantToken = w.app.wallets.mintDevSession(merchant);
+    const merchantToken = await w.app.wallets.mintDevSession(merchant);
     const red = await call('POST', '/v1/redemptions', { token: user.token, key: 'http-redeem-01', body: { asset: w.SHOP, amount: '10', holder: user.publicKey } });
     expect(red.status).toBe(201);
     const ret = await call('POST', `/v1/redemptions/${red.json.id}/return`, { token: user.token, body: { signedXdr: w.signFake(red.json.unsignedXdr) } });

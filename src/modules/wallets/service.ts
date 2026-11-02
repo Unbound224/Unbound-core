@@ -4,7 +4,8 @@ import type { Actor } from '../../common/auth.js';
 import type { AuditLog } from '../../common/audit.js';
 import { ApiError } from '../../common/errors.js';
 import { newId, type Clock } from '../../common/ids.js';
-import { InMemoryRepository, type Repository } from '../../common/repository.js';
+import type { Repository } from '../../common/repository.js';
+import type { Storage } from '../../persistence/storage.js';
 
 export interface WalletBinding {
   id: string;
@@ -22,6 +23,13 @@ interface Challenge {
   used: boolean;
 }
 
+interface Session {
+  /** SHA-256 of the bearer token; the token itself is never stored */
+  id: string;
+  actor: Actor;
+  expiresAt: number;
+}
+
 const CHALLENGE_TTL_MS = 5 * 60_000;
 const SESSION_TTL_MS = 60 * 60_000;
 
@@ -34,27 +42,33 @@ export function challengeMessage(nonce: string, publicKey: string): string {
  * sees a signature, never a secret. Sessions are random bearer tokens stored as SHA-256 hashes.
  */
 export class WalletService {
-  readonly bindings: Repository<WalletBinding> = new InMemoryRepository<WalletBinding>();
-  private readonly challenges = new Map<string, Challenge>();
-  private readonly sessions = new Map<string, { actor: Actor; expiresAt: number }>();
+  readonly bindings: Repository<WalletBinding>;
+  private readonly challenges: Repository<Challenge>;
+  private readonly sessions: Repository<Session>;
 
   constructor(
     private readonly clock: Clock,
     private readonly audit: AuditLog,
-  ) {}
+    storage: Storage,
+  ) {
+    this.bindings = storage.repo<WalletBinding>('wallet_bindings');
+    this.challenges = storage.repo<Challenge>('wallet_challenges');
+    this.sessions = storage.repo<Session>('sessions');
+  }
 
-  createChallenge(publicKey: string): { challengeId: string; message: string; expiresAt: string } {
+  async createChallenge(publicKey: string): Promise<{ challengeId: string; message: string; expiresAt: string }> {
     if (!StrKey.isValidEd25519PublicKey(publicKey)) throw new ApiError('VALIDATION_FAILED', 'invalid Stellar public key');
     const nonce = randomBytes(24).toString('hex');
     const c: Challenge = { id: newId('chl'), nonce, publicKey, expiresAt: this.clock.now().getTime() + CHALLENGE_TTL_MS, used: false };
-    this.challenges.set(c.id, c);
+    await this.challenges.put(c);
     return { challengeId: c.id, message: challengeMessage(nonce, publicKey), expiresAt: new Date(c.expiresAt).toISOString() };
   }
 
   async verifyChallenge(challengeId: string, signatureBase64: string, requestId: string): Promise<{ token: string; actor: Actor; binding: WalletBinding }> {
-    const c = this.challenges.get(challengeId);
+    const c = await this.challenges.get(challengeId);
     if (!c || c.used || c.expiresAt <= this.clock.now().getTime()) throw new ApiError('CHALLENGE_INVALID', 'challenge is unknown, used or expired');
     c.used = true; // single use even if the signature turns out wrong
+    await this.challenges.put(c);
     let ok: boolean;
     try {
       ok = Keypair.fromPublicKey(c.publicKey).verify(Buffer.from(challengeMessage(c.nonce, c.publicKey)), Buffer.from(signatureBase64, 'base64'));
@@ -68,21 +82,21 @@ export class WalletService {
     await this.bindings.put(binding);
     const actor: Actor = { id: binding.userId, role: 'user' };
     const token = randomBytes(32).toString('hex');
-    this.sessions.set(hash(token), { actor, expiresAt: this.clock.now().getTime() + SESSION_TTL_MS });
+    await this.sessions.put({ id: hash(token), actor, expiresAt: this.clock.now().getTime() + SESSION_TTL_MS });
     await this.audit.record(actor, 'wallet', 'WALLET_VERIFIED', binding.id, requestId);
     return { token, actor, binding };
   }
 
   /** DEV/TEST ONLY: mint a session for a non-wallet actor (merchant/admin) without any credentials. */
-  mintDevSession(actor: Actor): string {
+  async mintDevSession(actor: Actor): Promise<string> {
     const token = randomBytes(32).toString('hex');
-    this.sessions.set(hash(token), { actor, expiresAt: this.clock.now().getTime() + SESSION_TTL_MS });
+    await this.sessions.put({ id: hash(token), actor, expiresAt: this.clock.now().getTime() + SESSION_TTL_MS });
     return token;
   }
 
-  authenticate(token: string | undefined): Actor | undefined {
+  async authenticate(token: string | undefined): Promise<Actor | undefined> {
     if (!token) return undefined;
-    const s = this.sessions.get(hash(token));
+    const s = await this.sessions.get(hash(token));
     if (!s || s.expiresAt <= this.clock.now().getTime()) return undefined;
     return s.actor;
   }

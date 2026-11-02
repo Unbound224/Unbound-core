@@ -5,7 +5,8 @@ import { requireRole, type Actor } from '../../common/auth.js';
 import { ApiError } from '../../common/errors.js';
 import { newId, type Clock } from '../../common/ids.js';
 import { parseAmount } from '../../common/money.js';
-import { InMemoryRepository, KeyedMutex, type Repository } from '../../common/repository.js';
+import { KeyedMutex, type Repository } from '../../common/repository.js';
+import type { Storage } from '../../persistence/storage.js';
 import type { IssuerService } from '../issuers/service.js';
 import type { OperationsGuard } from '../reconciliation/guard.js';
 import type { LedgerObservation } from '../reconciliation/service.js';
@@ -62,8 +63,8 @@ export interface ExchangeIntent {
 }
 
 export class ExchangeService {
-  readonly quotes: Repository<StoredQuote> = new InMemoryRepository<StoredQuote>();
-  readonly intents: Repository<ExchangeIntent> = new InMemoryRepository<ExchangeIntent>();
+  readonly quotes: Repository<StoredQuote>;
+  readonly intents: Repository<ExchangeIntent>;
   private readonly lock = new KeyedMutex();
 
   constructor(
@@ -74,13 +75,17 @@ export class ExchangeService {
       wallets: WalletService;
       gateway: StellarGateway;
       guard: OperationsGuard;
+      storage: Storage;
     },
-  ) {}
+  ) {
+    this.quotes = deps.storage.repo<StoredQuote>('exchange_quotes');
+    this.intents = deps.storage.repo<ExchangeIntent>('exchange_intents');
+  }
 
   /** POST /v1/exchange/quote */
   async quote(actor: Actor | undefined, input: unknown, requestId: string): Promise<StoredQuote> {
     const user = requireRole(actor, 'user');
-    this.deps.guard.assertNotPaused();
+    await this.deps.guard.assertNotPaused();
     const parsed = QuoteRequestSchema.safeParse(input);
     if (!parsed.success) throw new ApiError('VALIDATION_FAILED', 'invalid quote request', parsed.error.issues.map((i) => i.path.join('.')));
     const req = parsed.data;
@@ -134,7 +139,7 @@ export class ExchangeService {
         }
         return existing;
       }
-      this.deps.guard.assertNotPaused();
+      await this.deps.guard.assertNotPaused();
       const sq = await this.quotes.get(input.quoteId);
       if (!sq || sq.userId !== user.id) throw new ApiError('NOT_FOUND', 'quote not found');
       const now = this.deps.clock.now().toISOString();
@@ -203,7 +208,7 @@ export class ExchangeService {
       let intent = await this.getIntent(user, id);
       if (intent.submitKey === input.submitKey) return intent; // idempotent replay: no second submission
       if (intent.state !== 'AWAITING_SIGNATURE') throw new ApiError('INVALID_STATE', `intent is ${intent.state}; it cannot be submitted`);
-      this.deps.guard.assertNotPaused();
+      await this.deps.guard.assertNotPaused();
       const sq = await this.quotes.get(intent.quoteId);
       if (!sq) throw new ApiError('INTERNAL', 'quote missing');
       // Stale quote / revoked issuer => nothing has been spent; require a fresh approval.

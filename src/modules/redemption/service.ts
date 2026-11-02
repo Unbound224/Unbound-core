@@ -4,7 +4,8 @@ import { requireRole, type Actor } from '../../common/auth.js';
 import { ApiError } from '../../common/errors.js';
 import { newId, type Clock } from '../../common/ids.js';
 import { parseAmount } from '../../common/money.js';
-import { InMemoryRepository, KeyedMutex, type Repository } from '../../common/repository.js';
+import { KeyedMutex, type Repository } from '../../common/repository.js';
+import type { Storage } from '../../persistence/storage.js';
 import { mapGatewayError, type StellarGateway } from '../exchange/gateway.js';
 import type { IssuerService } from '../issuers/service.js';
 import type { LedgerObservation } from '../reconciliation/service.js';
@@ -60,7 +61,7 @@ export const RedemptionCreateSchema = z
   .strict();
 
 export class RedemptionService {
-  readonly requests: Repository<RedemptionRequest> = new InMemoryRepository<RedemptionRequest>();
+  readonly requests: Repository<RedemptionRequest>;
   private readonly lock = new KeyedMutex();
 
   constructor(
@@ -71,8 +72,11 @@ export class RedemptionService {
       wallets: WalletService;
       gateway: StellarGateway;
       guard: OperationsGuard;
+      storage: Storage;
     },
-  ) {}
+  ) {
+    this.requests = deps.storage.repo<RedemptionRequest>('redemption_requests');
+  }
 
   /**
    * POST /v1/redemptions. Only credits with an ACTIVE, verified, unexpired issuer program and an
@@ -93,7 +97,7 @@ export class RedemptionService {
         }
         return existing;
       }
-      this.deps.guard.assertNotPaused();
+      await this.deps.guard.assertNotPaused();
       const units = parseAmount(req.amount);
       const elig = await this.deps.issuers.eligibility(req.asset);
       if (!elig.eligible || elig.kind !== 'CREDIT' || !elig.program) {
@@ -143,7 +147,7 @@ export class RedemptionService {
     return this.lock.run(`red:${id}`, async () => {
       let r = await this.getFor(user, id);
       if (r.state !== 'AWAITING_RETURN') return r; // replay of an already-submitted return
-      this.deps.guard.assertNotPaused();
+      await this.deps.guard.assertNotPaused();
       r = await this.move(r, 'RETURN_SUBMITTED', user, requestId);
       try {
         const o = await this.deps.gateway.submit({ signedXdr, expectedHash: r.returnTxHash ?? '' });
@@ -175,7 +179,7 @@ export class RedemptionService {
     const m = requireRole(actor, 'merchant');
     return this.lock.run(`red:${id}`, async () => {
       const r = await this.getFor(m, id);
-      this.deps.guard.assertNotPaused();
+      await this.deps.guard.assertNotPaused();
       if (r.state === 'FULFILLED') return r; // idempotent
       if (r.state !== 'RETURN_CONFIRMED') throw new ApiError('INVALID_STATE', `cannot confirm a redemption in ${r.state}; the returned credit must be confirmed on the ledger first`);
       return this.move(r, 'FULFILLED', m, requestId);

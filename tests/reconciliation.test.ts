@@ -86,7 +86,7 @@ describe('discrepancy handling', () => {
     expect(failed.state).toBe('FAILED');
     const res = await w.app.reconciliation.ingest(w.eventFor(intent.txHash!, 'CONFIRMED'), 'r');
     expect(res.observation.outcome).toBe('DISCREPANCY');
-    expect(w.app.guard.paused).toBe(true);
+    expect(await w.app.guard.isPaused()).toBe(true);
     // local state is not silently rewritten
     expect((await w.app.exchange.intents.get(intent.id))!.state).toBe('FAILED');
     // new sensitive work is blocked
@@ -94,7 +94,7 @@ describe('discrepancy handling', () => {
     // only an admin can resume
     await expect(w.app.guard.resume(user.actor, 'ok', 'r')).rejects.toMatchObject({ code: 'FORBIDDEN' });
     await w.app.guard.resume(w.admin, 'investigated INC-1', 'r');
-    expect(w.app.guard.paused).toBe(false);
+    expect(await w.app.guard.isPaused()).toBe(false);
     await expect(w.quoteFor(user)).resolves.toBeTruthy();
     const trail = (await w.app.audit.all()).map((e) => e.action);
     expect(trail).toEqual(expect.arrayContaining(['DISCREPANCY', 'SENSITIVE_ACTIONS_PAUSED', 'SENSITIVE_ACTIONS_RESUMED']));
@@ -105,6 +105,6 @@ describe('discrepancy handling', () => {
     expect(intent.state).toBe('CONFIRMED');
     const res = await w.app.reconciliation.ingest(w.eventFor(intent.txHash!, 'FAILED'), 'r');
     expect(res.observation.outcome).toBe('DISCREPANCY');
-    expect(w.app.guard.paused).toBe(true);
+    expect(await w.app.guard.isPaused()).toBe(true);
   });
 });

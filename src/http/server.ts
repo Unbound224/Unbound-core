@@ -68,7 +68,7 @@ const routes: Route[] = [
   {
     method: 'POST',
     pattern: /^\/v1\/wallets\/challenge$/,
-    handler: async (c) => ok(c.app.wallets.createChallenge(str(asObj(c.body), 'publicKey'))),
+    handler: async (c) => ok(await c.app.wallets.createChallenge(str(asObj(c.body), 'publicKey'))),
   },
   {
     method: 'POST',
@@ -203,7 +203,7 @@ async function handle(app: App, req: IncomingMessage, res: ServerResponse): Prom
   };
   try {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (req.method === 'GET' && url.pathname === '/healthz') return send(200, { status: 'ok', paused: app.guard.paused });
+    if (req.method === 'GET' && url.pathname === '/healthz') return send(200, { status: 'ok', paused: await app.guard.isPaused() });
     const matches = routes
       .map((r) => ({ r, m: r.pattern.exec(url.pathname) }))
       .filter((x): x is { r: Route; m: RegExpExecArray } => x.m !== null);
@@ -215,7 +215,7 @@ async function handle(app: App, req: IncomingMessage, res: ServerResponse): Prom
     const ik = req.headers['idempotency-key'];
     const out = await hit.r.handler({
       app,
-      actor: app.wallets.authenticate(token),
+      actor: await app.wallets.authenticate(token),
       requestId,
       params: hit.m.slice(1),
       query: url.searchParams,

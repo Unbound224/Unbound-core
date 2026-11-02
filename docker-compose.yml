@@ -1,0 +1,35 @@
+# DEV ONLY. Runs unbound-core with durable SQLite storage in a named volume.
+# Syntax-checked with `docker compose config` only; containers have NOT been built or run (no Docker daemon in the authoring sandbox).
+# Set credentials in your shell or an untracked .env (never commit them):
+#   BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD (>= 12 chars)
+# Optional: STELLAR_GATEWAY_URL, STELLAR_GATEWAY_TOKEN to use a running unbound-stellar gateway.
+services:
+  core:
+    build: .
+    ports:
+      - '127.0.0.1:3001:3001'
+    environment:
+      APP_ENV: development
+      PORT: 3001
+      HOST: 0.0.0.0
+      DATABASE_FILE: /data/core.db
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      STELLAR_GATEWAY_URL: ${STELLAR_GATEWAY_URL:-}
+      STELLAR_GATEWAY_TOKEN: ${STELLAR_GATEWAY_TOKEN:-}
+    volumes:
+      - core-data:/data
+  seed:
+    build: .
+    profiles: ['seed']
+    command: ['npx', 'tsx', 'scripts/seed-dev.ts']
+    environment:
+      DATABASE_FILE: /data/core.db
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?set in your shell}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?set in your shell}
+      SEED_MERCHANT_EMAIL: ${SEED_MERCHANT_EMAIL:?set in your shell}
+      SEED_MERCHANT_PASSWORD: ${SEED_MERCHANT_PASSWORD:?set in your shell}
+    volumes:
+      - core-data:/data
+volumes:
+  core-data:

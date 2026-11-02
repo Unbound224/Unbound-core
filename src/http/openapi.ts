@@ -1,0 +1,95 @@
+import { z } from 'zod';
+import { QuoteRequestSchema } from '../modules/exchange/service.js';
+import { RedemptionPolicySchema } from '../modules/issuers/policy.js';
+import { ApplySchema } from '../modules/issuers/service.js';
+import { ReconciliationEventSchema } from '../modules/reconciliation/contract.js';
+import { RedemptionCreateSchema } from '../modules/redemption/service.js';
+
+const ref = (n: string) => ({ $ref: `#/components/schemas/${n}` });
+const json = (schema: unknown) => ({ content: { 'application/json': { schema } } });
+const err = { description: 'Error', ...json(ref('Error')) };
+const idem = { name: 'Idempotency-Key', in: 'header', required: true, schema: { type: 'string', minLength: 8, maxLength: 128 } };
+const secured = [{ bearerAuth: [] }];
+
+interface Op {
+  summary: string;
+  req?: string;
+  res?: string;
+  status?: string;
+  idem?: boolean;
+  auth?: boolean;
+  extra?: boolean;
+}
+
+function op(o: Op) {
+  return {
+    summary: o.summary + (o.extra ? ' (additive; not in the initial SRD list)' : ''),
+    ...(o.auth === false ? {} : { security: secured }),
+    ...(o.idem ? { parameters: [idem] } : {}),
+    ...(o.req ? { requestBody: { required: true, ...json(ref(o.req)) } } : {}),
+    responses: {
+      [o.status ?? '200']: { description: 'OK', ...(o.res ? json(ref(o.res)) : {}) },
+      default: err,
+    },
+  };
+}
+
+/** OpenAPI 3.1 document for the v1 contract. Schemas come from the same zod objects the server validates with. */
+export function buildOpenApi() {
+  return {
+    openapi: '3.1.0',
+    info: {
+      title: 'Unbound core API',
+      version: '1.0.0-draft',
+      description:
+        'Testnet-only. Writes that need an on-chain action return a STATEFUL intent, never a fake immediate success. Errors: {"error":{"code","message","requestId"}}.',
+    },
+    servers: [{ url: 'http://127.0.0.1:3001' }],
+    paths: {
+      '/v1/merchants/apply': { post: op({ summary: 'Apply as a merchant/issuer', req: 'MerchantApply', status: '201' }) },
+      '/v1/assets': { get: op({ summary: 'List eligible redeemable assets (?issuer=)', auth: false }) },
+      '/v1/assets/{id}': { get: op({ summary: 'Get an eligible asset and its signed redemption policy', res: 'RedemptionPolicy', auth: false }) },
+      '/v1/wallets/challenge': { post: op({ summary: 'Create a one-time wallet challenge', auth: false }) },
+      '/v1/wallets/verify': { post: op({ summary: 'Verify a signed challenge and open a session', auth: false }) },
+      '/v1/exchange/quote': { post: op({ summary: 'Indicative, expiring quote', req: 'QuoteRequest', status: '201' }) },
+      '/v1/exchange/intents': { post: op({ summary: 'Create an exchange intent from a quote', idem: true, status: '201' }) },
+      '/v1/exchange/intents/{id}': { get: op({ summary: 'Get intent state' }) },
+      '/v1/exchange/intents/{id}/submit': {
+        post: op({ summary: 'Submit the user-signed transaction. 200 terminal, 202 in flight (SUBMITTED/RECONCILING)', idem: true, status: '202' }),
+      },
+      '/v1/redemptions': { post: op({ summary: 'Request redemption of supported credit', req: 'RedemptionCreate', idem: true, status: '201' }) },
+      '/v1/redemptions/{id}': { get: op({ summary: 'Get redemption state' }) },
+      '/v1/redemptions/{id}/return': { post: op({ summary: 'Submit the user-signed return (burn) payment', status: '202', extra: true }) },
+      '/v1/merchants/me/redemptions': { get: op({ summary: "List the calling merchant's redemptions" }) },
+      '/v1/merchants/me/redemptions/{id}/confirm': { post: op({ summary: 'Merchant confirms fulfilment after the return is ledger-confirmed' }) },
+      '/v1/merchants/me/assets': { post: op({ summary: 'Register a credit program with a signed redemption policy', status: '201', extra: true }) },
+      '/v1/admin/merchants/{id}/verify': { post: op({ summary: 'Admin verifies a merchant with an evidence reference', extra: true }) },
+      '/v1/admin/ledger-events': { post: op({ summary: 'Ingest a reconciliation event from unbound-stellar', req: 'ReconciliationEvent', status: '201', extra: true }) },
+    },
+    components: {
+      securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer' } },
+      schemas: {
+        Error: {
+          type: 'object',
+          required: ['error'],
+          properties: {
+            error: {
+              type: 'object',
+              required: ['code', 'message', 'requestId'],
+              properties: { code: { type: 'string' }, message: { type: 'string' }, requestId: { type: 'string' } },
+            },
+          },
+        },
+        MerchantApply: z.toJSONSchema(ApplySchema),
+        QuoteRequest: z.toJSONSchema(QuoteRequestSchema),
+        RedemptionCreate: z.toJSONSchema(RedemptionCreateSchema),
+        RedemptionPolicy: z.toJSONSchema(RedemptionPolicySchema),
+        ReconciliationEvent: z.toJSONSchema(ReconciliationEventSchema),
+      },
+    },
+  };
+}
+
+export function openApiJson(): string {
+  return JSON.stringify(buildOpenApi(), null, 2) + '\n';
+}

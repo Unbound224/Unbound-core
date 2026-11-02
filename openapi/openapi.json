@@ -1,0 +1,895 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Unbound core API",
+    "version": "1.0.0-draft",
+    "description": "Testnet-only. Writes that need an on-chain action return a STATEFUL intent, never a fake immediate success. Errors: {\"error\":{\"code\",\"message\",\"requestId\"}}."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:3001"
+    }
+  ],
+  "paths": {
+    "/v1/merchants/apply": {
+      "post": {
+        "summary": "Apply as a merchant/issuer",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MerchantApply"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/assets": {
+      "get": {
+        "summary": "List eligible redeemable assets (?issuer=)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/assets/{id}": {
+      "get": {
+        "summary": "Get an eligible asset and its signed redemption policy",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedemptionPolicy"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallets/challenge": {
+      "post": {
+        "summary": "Create a one-time wallet challenge",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/wallets/verify": {
+      "post": {
+        "summary": "Verify a signed challenge and open a session",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/exchange/quote": {
+      "post": {
+        "summary": "Indicative, expiring quote",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/exchange/intents": {
+      "post": {
+        "summary": "Create an exchange intent from a quote",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/exchange/intents/{id}": {
+      "get": {
+        "summary": "Get intent state",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/exchange/intents/{id}/submit": {
+      "post": {
+        "summary": "Submit the user-signed transaction. 200 terminal, 202 in flight (SUBMITTED/RECONCILING)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/redemptions": {
+      "post": {
+        "summary": "Request redemption of supported credit",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedemptionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/redemptions/{id}": {
+      "get": {
+        "summary": "Get redemption state",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/redemptions/{id}/return": {
+      "post": {
+        "summary": "Submit the user-signed return (burn) payment (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/me/redemptions": {
+      "get": {
+        "summary": "List the calling merchant's redemptions",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/me/redemptions/{id}/confirm": {
+      "post": {
+        "summary": "Merchant confirms fulfilment after the return is ledger-confirmed",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/me/assets": {
+      "post": {
+        "summary": "Register a credit program with a signed redemption policy (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/merchants/{id}/verify": {
+      "post": {
+        "summary": "Admin verifies a merchant with an evidence reference (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/ledger-events": {
+      "post": {
+        "summary": "Ingest a reconciliation event from unbound-stellar (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReconciliationEvent"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "MerchantApply": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "legalName": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 200
+          },
+          "jurisdiction": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100
+          },
+          "contact": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "legalName",
+          "jurisdiction",
+          "contact"
+        ],
+        "additionalProperties": false
+      },
+      "QuoteRequest": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "requestId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "sourceAsset": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{1,12}$"
+              },
+              "issuer": {
+                "type": "string",
+                "minLength": 56,
+                "maxLength": 56
+              }
+            },
+            "required": [
+              "code",
+              "issuer"
+            ],
+            "additionalProperties": false
+          },
+          "targetAsset": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{1,12}$"
+              },
+              "issuer": {
+                "type": "string",
+                "minLength": 56,
+                "maxLength": 56
+              }
+            },
+            "required": [
+              "code",
+              "issuer"
+            ],
+            "additionalProperties": false
+          },
+          "sourceAmount": {
+            "type": "string"
+          },
+          "minimumDestinationAmount": {
+            "type": "string"
+          },
+          "slippageBps": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "destinationAccount": {
+            "type": "string",
+            "minLength": 56,
+            "maxLength": 56
+          },
+          "network": {
+            "type": "string",
+            "const": "TESTNET"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "sourceAsset",
+          "targetAsset",
+          "sourceAmount",
+          "slippageBps",
+          "destinationAccount",
+          "network"
+        ],
+        "additionalProperties": false
+      },
+      "RedemptionCreate": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "asset": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{1,12}$"
+              },
+              "issuer": {
+                "type": "string",
+                "minLength": 56,
+                "maxLength": 56
+              }
+            },
+            "required": [
+              "code",
+              "issuer"
+            ],
+            "additionalProperties": false
+          },
+          "amount": {
+            "type": "string"
+          },
+          "holder": {
+            "type": "string",
+            "minLength": 56,
+            "maxLength": 56
+          }
+        },
+        "required": [
+          "asset",
+          "amount",
+          "holder"
+        ],
+        "additionalProperties": false
+      },
+      "RedemptionPolicy": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "legalIdentity": {
+            "type": "object",
+            "properties": {
+              "legalName": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 200
+              },
+              "registrationRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": [
+              "legalName",
+              "registrationRef"
+            ],
+            "additionalProperties": false
+          },
+          "assetCode": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{1,12}$"
+          },
+          "issuerPublicKey": {
+            "type": "string"
+          },
+          "unitOfAccount": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100
+          },
+          "faceValue": {
+            "type": "object",
+            "properties": {
+              "amountPerUnit": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,7})?$"
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              }
+            },
+            "required": [
+              "amountPerUnit",
+              "currency"
+            ],
+            "additionalProperties": false
+          },
+          "redemptionLimits": {
+            "type": "object",
+            "properties": {
+              "minUnits": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,7})?$"
+              },
+              "maxUnitsPerRequest": {
+                "type": "string",
+                "pattern": "^\\d+(\\.\\d{1,7})?$"
+              }
+            },
+            "additionalProperties": false
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "jurisdiction": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100
+          },
+          "refundPolicy": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 2000
+          },
+          "contact": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 200
+          },
+          "kycRequirements": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 1000
+          },
+          "tokenizationAuthorized": {
+            "type": "boolean",
+            "const": true
+          },
+          "transferAllowed": {
+            "type": "boolean",
+            "const": true
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "legalIdentity",
+          "assetCode",
+          "issuerPublicKey",
+          "unitOfAccount",
+          "faceValue",
+          "redemptionLimits",
+          "expiresAt",
+          "jurisdiction",
+          "refundPolicy",
+          "contact",
+          "kycRequirements",
+          "tokenizationAuthorized",
+          "transferAllowed",
+          "signature"
+        ],
+        "additionalProperties": false
+      },
+      "ReconciliationEvent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceRepo": {
+            "type": "string",
+            "const": "unbound-stellar"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "const": "1.0"
+          },
+          "network": {
+            "type": "string",
+            "const": "TESTNET"
+          },
+          "ledgerCursor": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entityRef": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "transaction"
+              },
+              "ref": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "required": [
+              "type",
+              "ref"
+            ],
+            "additionalProperties": false
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "CONFIRMED",
+              "FAILED",
+              "RECONCILING"
+            ]
+          },
+          "observedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+          },
+          "ledger": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "amountOutActual": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d{7}$"
+          }
+        },
+        "required": [
+          "id",
+          "sourceRepo",
+          "schemaVersion",
+          "network",
+          "ledgerCursor",
+          "entityRef",
+          "status",
+          "observedAt"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

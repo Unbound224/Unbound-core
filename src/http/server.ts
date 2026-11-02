@@ -1,0 +1,234 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { randomUUID } from 'node:crypto';
+import type { App } from '../app.js';
+import type { Actor } from '../common/auth.js';
+import { ApiError } from '../common/errors.js';
+import { requireRole } from '../common/auth.js';
+
+const MAX_BODY = 64 * 1024;
+
+interface Ctx {
+  app: App;
+  actor: Actor | undefined;
+  requestId: string;
+  params: string[];
+  query: URLSearchParams;
+  body: unknown;
+  idempotencyKey: string;
+}
+type Handler = (c: Ctx) => Promise<{ status: number; body: unknown }>;
+interface Route {
+  method: string;
+  pattern: RegExp;
+  handler: Handler;
+}
+
+const ok = (body: unknown, status = 200) => ({ status, body });
+
+/** Public projection: no internal fingerprints, keys or unsigned payload bookkeeping beyond what a client needs. */
+const publicIntent = (i: Awaited<ReturnType<App['exchange']['getIntent']>>) => ({
+  id: i.id,
+  schemaVersion: i.schemaVersion,
+  requestId: i.requestId,
+  state: i.state,
+  quoteId: i.quoteId,
+  sourceAccount: i.sourceAccount,
+  destinationAccount: i.destinationAccount,
+  txHash: i.txHash ?? null,
+  unsignedXdr: i.state === 'AWAITING_SIGNATURE' ? (i.unsignedXdr ?? null) : null,
+  failureReason: i.failureReason ?? null,
+  ledger: i.ledger ?? null,
+  amountOutActual: i.amountOutActual ?? null,
+  createdAt: i.createdAt,
+  updatedAt: i.updatedAt,
+});
+
+const asObj = (b: unknown): Record<string, unknown> => {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) throw new ApiError('VALIDATION_FAILED', 'JSON object body required');
+  return b as Record<string, unknown>;
+};
+const str = (o: Record<string, unknown>, k: string): string => {
+  const v = o[k];
+  if (typeof v !== 'string') throw new ApiError('VALIDATION_FAILED', `${k} must be a string`);
+  return v;
+};
+
+const routes: Route[] = [
+  { method: 'POST', pattern: /^\/v1\/merchants\/apply$/, handler: async (c) => ok(await c.app.issuers.apply(c.actor, c.body, c.requestId), 201) },
+  {
+    method: 'GET',
+    pattern: /^\/v1\/assets$/,
+    handler: async (c) => {
+      const issuer = c.query.get('issuer') ?? undefined;
+      const list = await c.app.issuers.listAssets(issuer ? { issuer } : {});
+      return ok({ assets: list.map(publicAsset) });
+    },
+  },
+  { method: 'GET', pattern: /^\/v1\/assets\/([\w-]+)$/, handler: async (c) => ok(publicAsset(await c.app.issuers.getAsset(c.params[0]!))) },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/wallets\/challenge$/,
+    handler: async (c) => ok(c.app.wallets.createChallenge(str(asObj(c.body), 'publicKey'))),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/wallets\/verify$/,
+    handler: async (c) => {
+      const b = asObj(c.body);
+      const v = await c.app.wallets.verifyChallenge(str(b, 'challengeId'), str(b, 'signature'), c.requestId);
+      return ok({ token: v.token, userId: v.actor.id, publicKey: v.binding.publicKey });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/exchange\/quote$/,
+    handler: async (c) => {
+      const s = await c.app.exchange.quote(c.actor, c.body, c.requestId);
+      return ok({ quote: s.quote, requestId: c.requestId }, 201);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/exchange\/intents$/,
+    handler: async (c) => {
+      const b = asObj(c.body);
+      const i = await c.app.exchange.createIntent(c.actor, { quoteId: str(b, 'quoteId'), idempotencyKey: c.idempotencyKey }, c.requestId);
+      return ok(publicIntent(i), 201);
+    },
+  },
+  { method: 'GET', pattern: /^\/v1\/exchange\/intents\/([\w-]+)$/, handler: async (c) => ok(publicIntent(await c.app.exchange.getIntent(c.actor, c.params[0]!))) },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/exchange\/intents\/([\w-]+)\/submit$/,
+    handler: async (c) => {
+      const i = await c.app.exchange.submit(c.actor, c.params[0]!, { signedXdr: str(asObj(c.body), 'signedXdr'), submitKey: c.idempotencyKey }, c.requestId);
+      // SUBMITTED / RECONCILING are honest, in-flight answers (202), never a fake success
+      return ok(publicIntent(i), i.state === 'CONFIRMED' || i.state === 'FAILED' ? 200 : 202);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/redemptions$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.create(c.actor, c.body, c.idempotencyKey, c.requestId)), 201),
+  },
+  { method: 'GET', pattern: /^\/v1\/redemptions\/([\w-]+)$/, handler: async (c) => ok(publicRedemption(await c.app.redemption.get(c.actor, c.params[0]!))) },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/redemptions\/([\w-]+)\/return$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitReturn(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId)), 202),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/v1\/merchants\/me\/redemptions$/,
+    handler: async (c) => ok({ redemptions: (await c.app.redemption.listForMerchant(c.actor)).map(publicRedemption) }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/confirm$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.merchantConfirm(c.actor, c.params[0]!, c.requestId))),
+  },
+  // --- additive endpoints (not in the initial SRD list; documented in openapi) ---
+  {
+    method: 'POST',
+    pattern: /^\/v1\/merchants\/me\/assets$/,
+    handler: async (c) => {
+      const b = asObj(c.body);
+      const p = await c.app.issuers.registerProgram(c.actor, { assetCode: str(b, 'assetCode'), issuerPublicKey: str(b, 'issuerPublicKey'), policy: b.policy }, c.requestId);
+      return ok(publicAsset(p), 201);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/merchants\/([\w-]+)\/verify$/,
+    handler: async (c) => ok(await c.app.issuers.verifyMerchant(c.actor, c.params[0]!, str(asObj(c.body), 'evidenceRef'), c.requestId)),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/ledger-events$/,
+    handler: async (c) => {
+      requireRole(c.actor, 'admin');
+      const r = await c.app.reconciliation.ingest(c.body, c.requestId);
+      return ok({ duplicate: r.duplicate, outcome: r.observation.outcome }, r.duplicate ? 200 : 201);
+    },
+  },
+];
+
+function publicAsset(p: Awaited<ReturnType<App['issuers']['getAsset']>>) {
+  return { id: p.id, assetCode: p.assetCode, issuer: p.issuerPublicKey, status: p.status, policy: p.policy };
+}
+
+function publicRedemption(r: Awaited<ReturnType<App['redemption']['get']>>) {
+  return {
+    id: r.id,
+    state: r.state,
+    asset: r.asset,
+    amount: r.amount,
+    holder: r.holder,
+    returnTxHash: r.returnTxHash ?? null,
+    unsignedXdr: r.state === 'AWAITING_RETURN' ? (r.unsignedXdr ?? null) : null,
+    refundDue: r.refundDue ?? false,
+    rejectionReason: r.rejectionReason ?? null,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
+}
+
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  if (req.method === 'GET' || req.method === 'HEAD') return undefined;
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY) throw new ApiError('PAYLOAD_TOO_LARGE', 'request body too large');
+    chunks.push(chunk as Buffer);
+  }
+  if (size === 0) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new ApiError('VALIDATION_FAILED', 'body is not valid JSON');
+  }
+}
+
+export function createHttpServer(app: App): Server {
+  return createServer((req, res) => void handle(app, req, res));
+}
+
+async function handle(app: App, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const inbound = req.headers['x-request-id'];
+  const requestId = typeof inbound === 'string' && /^[\w.-]{1,64}$/.test(inbound) ? inbound : `req_${randomUUID().replaceAll('-', '')}`;
+  const send = (status: number, body: unknown) => {
+    res.writeHead(status, { 'content-type': 'application/json', 'x-request-id': requestId, 'cache-control': 'no-store' });
+    res.end(JSON.stringify(body));
+  };
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost');
+    if (req.method === 'GET' && url.pathname === '/healthz') return send(200, { status: 'ok', paused: app.guard.paused });
+    const matches = routes
+      .map((r) => ({ r, m: r.pattern.exec(url.pathname) }))
+      .filter((x): x is { r: Route; m: RegExpExecArray } => x.m !== null);
+    if (matches.length === 0) throw new ApiError('NOT_FOUND', 'route not found');
+    const hit = matches.find((x) => x.r.method === req.method);
+    if (!hit) throw new ApiError('VALIDATION_FAILED', 'method not allowed for this route');
+    const auth = req.headers.authorization;
+    const token = auth?.startsWith('Bearer ') ? auth.slice(7) : undefined;
+    const ik = req.headers['idempotency-key'];
+    const out = await hit.r.handler({
+      app,
+      actor: app.wallets.authenticate(token),
+      requestId,
+      params: hit.m.slice(1),
+      query: url.searchParams,
+      body: await readBody(req),
+      idempotencyKey: typeof ik === 'string' ? ik : '',
+    });
+    send(out.status, out.body);
+  } catch (e) {
+    if (e instanceof ApiError) {
+      send(e.httpStatus, { error: { code: e.code, message: e.message, requestId } });
+    } else {
+      // never leak internals
+      send(500, { error: { code: 'INTERNAL', message: 'internal error', requestId } });
+    }
+  }
+}

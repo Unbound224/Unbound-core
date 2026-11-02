@@ -33,26 +33,22 @@ Start with:
 |---|---|
 | Merchant apply / admin verify (evidence ref required) / revoke; revocation suspends programs at once | Implemented, tested |
 | Signed redemption policy (ed25519 by the issuer key, strict schema, expiry, key/code binding, explicit tokenization + transfer permission) | Implemented, tested |
-| Asset eligibility evaluated fresh on every use; trusted-asset list for `unbound-stellar`'s registry | Implemented, tested |
-| Wallet challenge/verify (one-time, expiring, signature only; no secrets) and bearer sessions | Implemented, tested |
-| Exchange quote -> intent -> submit state machine with idempotency keys, write-ahead SUBMITTED, RECONCILING on unknown outcome, stale quote / revoked issuer blocks, crash recovery method | Implemented, tested (incl. concurrent duplicate requests) |
-| Reconciliation event consumer (contract v1.0, strict, fail-closed on unknown network/version, dedupe by event id, discrepancy pauses sensitive actions) | Implemented, tested; schema compared to unbound-stellar's published snapshot |
-| Redemption: only credit with an active verified program, within signed limits; merchant confirms only after the return is ledger-confirmed; rejection after return flags `refundDue` | Implemented, tested |
-| Audit trail (actor, scope, action, time, object, requestId; refuses secret-like keys) | Implemented, tested |
-| OpenAPI 3.1 for the v1 endpoints (`openapi/openapi.json`, snapshot-tested) | Implemented |
-| **Persistence (PostgreSQL/Prisma)** | **Not done.** `InMemoryRepository` only; data is lost on restart |
-| **Real Stellar integration** | **Not done.** Only `FakeStellarGateway` (test adapter, no real XDR/hashes). No cross-repo E2E has been run |
-| `GET /v1/portfolio` | Not implemented (needs gateway balance reads) |
-| NestJS, Redis/BullMQ queues, rate limiting, merchant/admin real authentication | Not done (dev sessions via `mintDevSession` are TEST/DEV only) |
-| Disputes workflow | Not done |
-
-## Quick start
-```
-npm ci
-npm run check      # lint + typecheck + tests + build
-npm run openapi    # regenerate openapi/openapi.json
-npm start          # DEV ONLY: 127.0.0.1:3001 with the fake gateway + in-memory storage
-```
+| Asset eligibility evaluated fresh on every use; trusted-asset list for `unbound-stellar` | Implemented, tested |
+| **Durable storage**: `Storage` port with SQLite (`node:sqlite`, experimental in Node 22) and migrations; sessions, challenges, targets, audit sequence and the reconciliation pause survive restarts | Implemented, tested (restart tests) |
+| **Auth**: wallet challenge/verify for consumers; scrypt email+password for merchants/admins with lockout, logout, disable; merchant context resolved per request | Implemented, tested |
+| Exchange quote -> intent -> submit state machine (idempotency keys, write-ahead SUBMITTED, RECONCILING on unknown outcome, stale quote / revoked issuer blocks, recovery method) | Implemented, tested incl. concurrent duplicates |
+| Reconciliation consumer (contract v1.0, strict, fail-closed, dedupe by event id, discrepancy pauses sensitive actions) | Implemented, tested |
+| Redemption (verified credit only, signed limits, merchant confirms after ledger-confirmed return, rejection flags `refundDue`) | Implemented, tested |
+| **`GET /v1/portfolio`**: ledger balances classified REDEEMABLE / SUPPORTED_ASSET / UNVERIFIED / SUSPENDED / EXPIRED / FROZEN | Implemented, tested (fake gateway) |
+| **Disputes**: open on own redemption/exchange, scoped visibility, merchant response window + escalation, admin ruling (records only, never moves funds) | Implemented, tested |
+| **`HttpStellarGateway`**: real adapter for the unbound-stellar gateway service (strict response validation, timeouts, unknown outcome throws) | Implemented; contract-tested with shared fixtures |
+| **Cross-repo tests**: fixture parity with `../Unbound-stellar` and a real core<->gateway-service exchange/failure/reconcile/redemption run | Implemented; run when the sibling checkout exists (SimulatedLedger behind the gateway, not Testnet) |
+| Dev seed (synthetic) and Dockerfile/docker-compose | Seed tested. Compose is only syntax-checked (`docker compose config`); containers never built or run |
+| Audit trail; OpenAPI 3.1 (snapshot-tested) | Implemented |
+| **PostgreSQL/Prisma** | **Not done.** SQLite behind the `Repository` port is the interim durable store (documents + JSON filter in memory; not for scale) |
+| **Live Testnet / real Horizon** | **Never run.** The gateway service (in unbound-stellar) uses Horizon adapters that are type-checked and mapping-tested only |
+| NestJS, Redis/BullMQ queues, rate limiting (except login lockout), email verification/password reset, MFA | Not done |
+| Scheduled jobs (`recoverStuck`, `escalateOverdue` are callable, not scheduled) | Not done |
 
 ## Contracts
 - `openapi/openapi.json` - v1 HTTP contract (additive endpoints are labeled in the document).

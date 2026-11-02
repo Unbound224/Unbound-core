@@ -22,3 +22,9 @@ sandbox and without pretending persistence exists.
 
 ## Consequences
 Restarts lose data; no job queue exists (stuck-intent recovery is a callable method, not a scheduled job).
+
+## Update (M2 continuation)
+- Durable storage: a `Storage` port with `InMemoryStorage` and `SqliteStorage` (node:sqlite, versioned migrations). The
+  `Repository` interface is unchanged, so a Prisma/PostgreSQL implementation remains a drop-in.
+- Real Stellar side: core talks to the `unbound-stellar` gateway service over HTTP (`HttpStellarGateway`); Horizon is behind
+  that service. Core still never builds Stellar transactions.

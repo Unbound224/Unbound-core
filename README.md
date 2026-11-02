@@ -61,7 +61,7 @@ No secrets in the repo; keys in tests are generated per run. The service accepts
 a user secret, never stores signed transactions in audit data, and never parses/builds Stellar transactions.
 
 ## Sibling versions
-Developed against `unbound-stellar` / `unbound-site` / `unbound-mobile` at their `claude/drips-wave-maintainer-projects-iwucl5` branches (untagged).
+Developed against `unbound-stellar` / `unbound-site` / `unbound-mobile` at their `main` branches (untagged).
 
 ## Minimal integration contract
 Always test the dependency path stated in ARCHITECTURE.md. Every new public endpoint/ABI/package message must be versioned and covered by consumer fixtures. See `docs/SRD.md` and `docs/TECHNICAL_BUILD.md`.

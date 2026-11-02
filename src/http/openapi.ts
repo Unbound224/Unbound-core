@@ -48,6 +48,7 @@ export function buildOpenApi() {
     paths: {
       '/v1/merchants/apply': { post: op({ summary: 'Apply as a merchant/issuer', req: 'MerchantApply', status: '201' }) },
       '/v1/assets': { get: op({ summary: 'List eligible redeemable assets (?issuer=)', auth: false }) },
+      '/v1/targets': { get: op({ summary: 'Assets a holder may receive in an exchange (not redeemable credit)', auth: false, extra: true }) },
       '/v1/assets/{id}': { get: op({ summary: 'Get an eligible asset and its signed redemption policy', res: 'RedemptionPolicy', auth: false }) },
       '/v1/auth/register': { post: op({ summary: 'Register a merchant account (email + password >= 12 chars). Grants no authority until an admin verifies the merchant', status: '201', auth: false, extra: true }) },
       '/v1/auth/login': { post: op({ summary: 'Log in with email/password; returns a bearer token. Locks the account after repeated failures', auth: false, extra: true }) },

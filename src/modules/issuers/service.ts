@@ -215,6 +215,11 @@ export class IssuerService {
     return out;
   }
 
+  /** Admin-curated assets a holder may receive in an exchange (not redeemable merchant credit). */
+  async listTargets(): Promise<AssetRef[]> {
+    return (await this.targets.list()).map((t) => ({ code: t.code, issuer: t.issuer }));
+  }
+
   async getAsset(id: string): Promise<AssetProgram> {
     const p = await this.programs.get(id);
     if (!p) throw new ApiError('NOT_FOUND', 'asset not found');

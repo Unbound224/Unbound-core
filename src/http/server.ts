@@ -65,6 +65,7 @@ const routes: Route[] = [
       return ok({ assets: list.map(publicAsset) });
     },
   },
+  { method: 'GET', pattern: /^\/v1\/targets$/, handler: async (c) => ok({ targets: await c.app.issuers.listTargets() }) },
   { method: 'GET', pattern: /^\/v1\/assets\/([\w-]+)$/, handler: async (c) => ok(publicAsset(await c.app.issuers.getAsset(c.params[0]!))) },
   {
     method: 'POST',

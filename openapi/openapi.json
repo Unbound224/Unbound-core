@@ -66,6 +66,26 @@
         }
       }
     },
+    "/v1/targets": {
+      "get": {
+        "summary": "Assets a holder may receive in an exchange (not redeemable credit) (additive; not in the initial SRD list)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/assets/{id}": {
       "get": {
         "summary": "Get an eligible asset and its signed redemption policy",

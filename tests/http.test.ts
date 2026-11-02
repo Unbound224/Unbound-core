@@ -131,3 +131,14 @@ describe('HTTP v1 (in-process server, FakeStellarGateway)', () => {
     expect(readFileSync(new URL('../openapi/openapi.json', import.meta.url), 'utf8')).toBe(openApiJson());
   });
 });
+
+describe('GET /v1/targets', () => {
+  it('lists admin-curated swap targets publicly and nothing else', async () => {
+    const { w, call } = await boot();
+    expect((await call('GET', '/v1/targets')).json.targets).toEqual([]);
+    await w.onboardMerchant();
+    const r = await call('GET', '/v1/targets');
+    expect(r.status).toBe(200);
+    expect(r.json.targets).toEqual([w.USDC]);
+  });
+});

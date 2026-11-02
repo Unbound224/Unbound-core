@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { formatAmount, parseAmount } from '../common/money.js';
 import {
   GatewayError,
+  type GatewayBalance,
   type GatewayOutcome,
   type GatewayQuote,
   type QuoteInput,
@@ -31,6 +32,14 @@ export class FakeStellarGateway implements StellarGateway {
   applied = new Set<string>();
   ttlMs = 60_000;
   private n = 0;
+  balancesByAccount = new Map<string, GatewayBalance[]>();
+  balanceError: Error | undefined;
+
+  async balances(account: string): Promise<GatewayBalance[]> {
+    if (this.balanceError) throw this.balanceError;
+    return this.balancesByAccount.get(account) ?? [];
+  }
+
   constructor(private readonly now: () => number) {}
 
   async quote(input: QuoteInput): Promise<GatewayQuote> {

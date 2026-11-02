@@ -55,6 +55,7 @@ export function buildOpenApi() {
       '/v1/admin/accounts': { post: op({ summary: 'Admin creates an admin or merchant account', status: '201', extra: true }) },
       '/v1/wallets/challenge': { post: op({ summary: 'Create a one-time wallet challenge', auth: false }) },
       '/v1/wallets/verify': { post: op({ summary: 'Verify a signed challenge and open a session', auth: false }) },
+      '/v1/portfolio': { get: op({ summary: 'Ledger balances of the caller\'s bound wallets, classified: only REDEEMABLE credit has usable value' }) },
       '/v1/exchange/quote': { post: op({ summary: 'Indicative, expiring quote', req: 'QuoteRequest', status: '201' }) },
       '/v1/exchange/intents': { post: op({ summary: 'Create an exchange intent from a quote', idem: true, status: '201' }) },
       '/v1/exchange/intents/{id}': { get: op({ summary: 'Get intent state' }) },

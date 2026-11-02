@@ -59,7 +59,16 @@ export class GatewayError extends Error {
   }
 }
 
+export interface GatewayBalance {
+  asset: GatewayAsset;
+  /** 7-dp decimal string */
+  balance: string;
+  isAuthorized: boolean;
+}
+
 export interface StellarGateway {
+  /** Ledger balances for an account; empty list when the account does not exist yet. */
+  balances(account: string): Promise<GatewayBalance[]>;
   quote(input: QuoteInput): Promise<GatewayQuote>;
   buildSettlement(args: { quote: GatewayQuote; sourceAccount: string; destinationAccount: string; idempotencyKey: string }): Promise<UnsignedSettlement>;
   /** Unsigned holder->issuer payment returning (burning) credit for a merchant redemption. */

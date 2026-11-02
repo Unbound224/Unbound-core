@@ -223,6 +223,31 @@
         }
       }
     },
+    "/v1/portfolio": {
+      "get": {
+        "summary": "Ledger balances of the caller's bound wallets, classified: only REDEEMABLE credit has usable value",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/exchange/quote": {
       "post": {
         "summary": "Indicative, expiring quote",

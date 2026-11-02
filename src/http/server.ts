@@ -80,6 +80,7 @@ const routes: Route[] = [
       return ok({ token: v.token, userId: v.actor.id, publicKey: v.binding.publicKey });
     },
   },
+  { method: 'GET', pattern: /^\/v1\/portfolio$/, handler: async (c) => ok(await c.app.portfolio.get(c.actor)) },
   {
     method: 'POST',
     pattern: /^\/v1\/exchange\/quote$/,

@@ -201,6 +201,19 @@ const routes: Route[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/v1\/admin\/merchants$/,
+    handler: async (c) => ok({ merchants: (await c.app.issuers.listMerchants(c.actor)).map((m) => ({ id: m.id, legalName: m.legalName, jurisdiction: m.jurisdiction, contact: m.contact, status: m.status, createdAt: m.createdAt, updatedAt: m.updatedAt })) }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/merchants\/([\w-]+)\/revoke$/,
+    handler: async (c) => {
+      await c.app.issuers.revokeMerchant(c.actor, c.params[0]!, str(asObj(c.body), 'reason'), c.requestId);
+      return ok({ ok: true });
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/v1\/admin\/merchants\/([\w-]+)\/verify$/,
     handler: async (c) => ok(await c.app.issuers.verifyMerchant(c.actor, c.params[0]!, str(asObj(c.body), 'evidenceRef'), c.requestId)),

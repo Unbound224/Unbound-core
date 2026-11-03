@@ -101,6 +101,12 @@ export class IssuerService {
     return m;
   }
 
+  /** Admin review queue: every merchant, newest first. */
+  async listMerchants(actor: Actor | undefined): Promise<Merchant[]> {
+    requireRole(actor, 'admin');
+    return (await this.merchants.list()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   /** Admin-only. Verification requires an evidence reference; this system never self-certifies. */
   async verifyMerchant(actor: Actor | undefined, merchantId: string, evidenceRef: string, requestId: string): Promise<IssuerVerification> {
     const admin = requireRole(actor, 'admin');
@@ -120,6 +126,7 @@ export class IssuerService {
   /** Revocation immediately suspends every program: eligibility is re-evaluated server-side each time. */
   async revokeMerchant(actor: Actor | undefined, merchantId: string, reason: string, requestId: string): Promise<void> {
     const admin = requireRole(actor, 'admin');
+    if (!reason || reason.trim().length < 3) throw new ApiError('VALIDATION_FAILED', 'a revocation reason is required');
     const m = await this.mustMerchant(merchantId);
     const now = this.clock.now().toISOString();
     m.status = 'REVOKED';

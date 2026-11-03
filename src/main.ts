@@ -32,7 +32,7 @@ const gateway =
 const windowHours = Number(process.env.ESCROW_WINDOW_HOURS ?? 0);
 // DEV ONLY: no email provider exists yet; reset emails are printed here instead of being sent.
 const mailer = new OutboxMailer((m) => console.log(`[dev-mail, NOT SENT] to=${m.to} subject="${m.subject}"\n${m.text}`));
-const resetUrl = process.env.PASSWORD_RESET_URL ?? 'http://localhost:3000/console/reset-password';
+const resetUrl = process.env.PASSWORD_RESET_URL ?? 'http://localhost:3000/merchant/reset-password';
 const app = createApp({ gateway, storage, log: (l) => console.log(l), mail: { mailer, resetUrl }, ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;

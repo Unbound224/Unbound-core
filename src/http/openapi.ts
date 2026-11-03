@@ -84,6 +84,8 @@ export function buildOpenApi() {
       '/v1/redemptions/{id}/refund': { post: op({ summary: 'Holder requests the escrow timeout refund (after the deadline); returns escrow.pendingXdr to sign', status: '202', extra: true }) },
       '/v1/redemptions/{id}/escrow/submit': { post: op({ summary: 'Submit the holder-signed escrow timeout refund', status: '202', extra: true }) },
       '/v1/merchants/me/assets': { post: op({ summary: 'Register a credit program with a signed redemption policy', status: '201', extra: true }) },
+      '/v1/admin/merchants': { get: op({ summary: 'Admin review queue: every merchant and its status', extra: true }) },
+      '/v1/admin/merchants/{id}/revoke': { post: op({ summary: 'Admin revokes a merchant with a reason; every program is suspended immediately', extra: true }) },
       '/v1/admin/merchants/{id}/verify': { post: op({ summary: 'Admin verifies a merchant with an evidence reference', extra: true }) },
       '/v1/admin/jobs': { get: op({ summary: 'Admin: status of the scheduled maintenance jobs', extra: true }) },
       '/v1/admin/jobs/{name}/run': { post: op({ summary: 'Admin: run a maintenance job now (never overlaps a running one)', extra: true }) },

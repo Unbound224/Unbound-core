@@ -112,3 +112,30 @@ describe('issuer lifecycle and eligibility', () => {
     await expect(w.app.issuers.apply({ id: 'u', role: 'merchant' }, { legalName: 'Okay Name', jurisdiction: 'TL', contact: 'abc', isAdmin: true }, w.rid())).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
   });
 });
+
+describe('admin merchant review over HTTP', () => {
+  it('lists merchants for admins only, and revokes with a reason', async () => {
+    const { createHttpServer } = await import('../src/http/server.js');
+    const w = makeWorld();
+    const { merchantRecord } = await w.onboardMerchant();
+    const server = createHttpServer(w.app);
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}`;
+    const admin = await w.app.wallets.openSession(w.admin);
+    const merchant = await w.app.wallets.openSession({ id: 'usr_merchant', role: 'merchant' });
+    const call = async (method: string, path: string, token: string, body?: unknown) => {
+      const res = await fetch(base + path, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+      return { status: res.status, json: (await res.json()) as Record<string, unknown> };
+    };
+    try {
+      expect((await call('GET', '/v1/admin/merchants', merchant)).status).toBe(403);
+      const list = await call('GET', '/v1/admin/merchants', admin);
+      expect(list.json.merchants).toEqual([expect.objectContaining({ id: merchantRecord.id, status: 'VERIFIED', legalName: 'Example Coffee Roasters Ltd' })]);
+      expect((await call('POST', `/v1/admin/merchants/${merchantRecord.id}/revoke`, admin, {})).status).toBe(400);
+      expect((await call('POST', `/v1/admin/merchants/${merchantRecord.id}/revoke`, admin, { reason: 'licence withdrawn' })).json).toEqual({ ok: true });
+      expect((await w.app.issuers.listAssets()).length).toBe(0);
+    } finally {
+      await new Promise<void>((r) => server.close(() => r()));
+    }
+  });
+});

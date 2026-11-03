@@ -1,0 +1,67 @@
+name: Bug report
+description: Something in Unbound-core does not behave as documented.
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Security problems: do not file here** - use the private report under the Security tab.
+        Unbound runs on Stellar Testnet with synthetic assets only; never paste secret keys, seeds, tokens or personal data.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - HTTP API / OpenAPI
+        - Issuer verification & policies
+        - Exchange intents
+        - Redemptions & disputes
+        - Reconciliation
+        - Storage / migrations
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps, ideally a failing test or command.
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      description: Output of `git rev-parse --short HEAD`, plus sibling repo commits if the bug crosses repos.
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Node version (`node -v`), OS, and for the site the browser.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Redact anything sensitive.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: The report contains no secret keys, seeds, tokens or personal data.
+          required: true

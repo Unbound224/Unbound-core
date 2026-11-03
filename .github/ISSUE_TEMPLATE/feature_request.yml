@@ -1,0 +1,53 @@
+name: Feature request
+description: Propose a change or new capability for Unbound-core.
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Features must fit this repository's boundary (see `docs/ARCHITECTURE.md`) and Unbound's safety rules: only
+        issuer-authorized credit, no promised liquidity or fiat cash-out, Testnet only. Scoped contributor ideas live in
+        `docs/CONTRIBUTOR_ISSUES.md`.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - HTTP API / OpenAPI
+        - Issuer verification & policies
+        - Exchange intents
+        - Redemptions & disputes
+        - Reconciliation
+        - Storage / migrations
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: Who needs this and why? What is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Interfaces touched (API, schema, fixtures, screens) and any sibling repos affected.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Testable outcomes, including failure paths.
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: nongoals
+    attributes:
+      label: Non-goals and alternatives considered

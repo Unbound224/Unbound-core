@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/Unbound224/Unbound-core/security/advisories/new
+    about: Please report security issues privately, never in a public issue.
+  - name: Cross-repo architecture and docs
+    url: https://github.com/Unbound224/Unbound-core/tree/main/docs
+    about: The canonical product, architecture and protocol documents live in Unbound-core.

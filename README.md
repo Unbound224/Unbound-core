@@ -1,75 +1,142 @@
-<img src="./brand/icon.svg" alt="Unbound logo" width="144" />
+<div align="center">
 
-# unbound-core
+<img src="./brand/icon.svg" alt="Unbound logo" width="96" height="96" />
 
-> Unbound — Turn stranded value into something usable.
+# Unbound-core
 
-**Status: domain core + HTTP v1 slice implemented and tested in-process; storage is in-memory and the Stellar side is a labeled fake. See "Status" below.** This repo is one of **exactly four meaningful independent codebases** in the Unbound Stellar-native project. It is not a placeholder created merely to increase Drips Wave submissions.
+**The policy and state engine behind Unbound: issuer verification, signed redemption policies, exchange intents, redemptions and reconciliation.**
 
-## Owns
-Merchant onboarding, verified issuer/redemption policies, listings and reservations, user accounts, authorization, canonical operational data, dispute workflow
+[![CI](https://github.com/Unbound224/Unbound-core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-core/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7537F5.svg)](./LICENSE)
+[![Network: Stellar Testnet](https://img.shields.io/badge/network-Stellar%20Testnet-10092E.svg)](https://developers.stellar.org/docs/networks)
+[![Status: pre-release](https://img.shields.io/badge/status-pre--release-AD8AFF.svg)](#project-status)
 
-## Why it is separate
-It has a distinct runtime/toolchain, external interface, tests, release cadence and maintainership boundary. Its siblings depend on its delivered interface, but implementation responsibilities must not be duplicated.
+Part of **[Unbound](https://github.com/Unbound224)** - turn stranded value into something usable.
 
-## Sibling repositories
-- `unbound-mobile` — Consumer asset inventory, issuer discovery, offers, approvals, wallet/secure signing, redemption status, transaction receipts
-- `unbound-stellar` — Native Stellar asset issuance integration, account trustlines, issuer flags, order-book/path quoting, transactions, indexing/reconciliation, typed integration SDK
-- `unbound-site` — Public consumer landing, official store badges, merchant issuer console, merchant redemption operations, docs and partner onboarding
+</div>
 
-## Architecture and development context
-Start with:
-- `AGENTS.md` — coding agent rules;
-- `docs/PRD.md` — product purpose and MVP;
-- `docs/SRD.md` — user/system requirements, APIs and state;
-- `docs/ARCHITECTURE.md` — four-repository responsibilities, data and execution paths;
-- `docs/TECHNICAL_BUILD.md` — recommended bootstrap, testing, phases;
-- `docs/SECURITY.md` — security/trust boundaries;
-- `docs/BRAND.md` — approved flat logo and flexible UI direction;
-- `docs/ROADMAP.md` — milestone acceptance gates.
+## What is Unbound?
 
-## Status (honest)
-| Capability | State |
+Store credit is usually stuck inside one retailer. Unbound lets a person exchange store credit that a retailer has
+**genuinely issued and agreed to honor** for other Stellar assets, at a real order-book quote that they sign on their
+own device, or redeem it with the issuer.
+
+- **Issuer-authorized only.** A verified merchant signs a redemption policy with its Stellar issuer key and must
+  authorize every holder's trustline. No issuer, no usable credit; arbitrary gift cards are out of scope.
+- **No fake liquidity.** Quotes come from real Stellar path payments, expire and carry a minimum-output floor. No route
+  means no quote. Unbound never promises a price, liquidity or fiat cash-out.
+- **Ledger-truthful.** Nothing is shown as settled until the ledger confirms it; unknown outcomes reconcile by hash.
+- **Testnet only today.** Mainnet needs an external security review and legal/compliance work that has not happened.
+
+## This repository
+
+`Unbound-core` is the system of record. It decides **whether** a credit is eligible (verified issuer, valid signed
+policy, not revoked or expired), runs the exchange-intent state machine (quote -> intent -> signature -> submit ->
+confirmed / failed / reconciling) with idempotency keys, handles redemptions and disputes, and consumes
+reconciliation events from `Unbound-stellar`. It never builds or parses Stellar transactions and never sees a user's
+secret key.
+
+## Architecture
+
+Unbound is four independently tested repositories with one owner per boundary. This one is highlighted.
+
+```mermaid
+flowchart LR
+  M["Unbound-mobile<br/>Flutter wallet"]
+  S["Unbound-site<br/>landing + merchant console"]
+  C["Unbound-core<br/>HTTP API v1, policy, intents, audit"]
+  G["Unbound-stellar<br/>SDK, gateway service, chain worker"]
+  N[("Stellar Testnet<br/>assets, trustlines, DEX")]
+  M -- "quotes, intents, signed XDR" --> C
+  S -- "merchant auth, redemption queue" --> C
+  C -- "quote / build / submit" --> G
+  G -- "Horizon" --> N
+  G -- "reconciliation events" --> C
+  style C fill:#7537F5,stroke:#10092E,color:#ffffff
+```
+
+Clients never build Stellar transactions, and core never reimplements ledger logic. Details:
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and [`docs/STELLAR_PROTOCOL.md`](./docs/STELLAR_PROTOCOL.md).
+
+## Quickstart
+
+Requires Node 22+. Everything below runs offline with the clearly labelled `FakeStellarGateway` (no Stellar network).
+
+```bash
+npm ci
+npm run check                      # lint + typecheck + tests + build
+
+# Local dev server with durable SQLite and a synthetic seed (choose your own dev-only passwords, >= 12 chars)
+mkdir -p data
+export DATABASE_FILE=./data/dev.db \
+  BOOTSTRAP_ADMIN_EMAIL=admin@example.invalid BOOTSTRAP_ADMIN_PASSWORD='change-me-admin-123' \
+  SEED_MERCHANT_EMAIL=shop@example.invalid SEED_MERCHANT_PASSWORD='change-me-shop-1234'
+npm run seed                       # verified merchant + SHOP credit program + USDC target (synthetic)
+npm start                          # http://127.0.0.1:3001
+curl http://127.0.0.1:3001/v1/targets
+```
+
+To use a real `Unbound-stellar` gateway instead of the fake, also set `STELLAR_GATEWAY_URL` and `STELLAR_GATEWAY_TOKEN`
+(see `.env.example`). Then point [Unbound-site](https://github.com/Unbound224/Unbound-site) at this server and sign in
+as the seeded merchant to see the console.
+
+## Project status
+
+Legend: **Built** = implemented and covered by automated tests in this repo. **Not yet** = not started or not verified.
+
+| Capability | Status |
 |---|---|
-| Merchant apply / admin verify (evidence ref required) / revoke; revocation suspends programs at once | Implemented, tested |
-| Signed redemption policy (ed25519 by the issuer key, strict schema, expiry, key/code binding, explicit tokenization + transfer permission) | Implemented, tested |
-| Asset eligibility evaluated fresh on every use; trusted-asset list for `unbound-stellar` | Implemented, tested |
-| **Durable storage**: `Storage` port with SQLite (`node:sqlite`, experimental in Node 22) and migrations; sessions, challenges, targets, audit sequence and the reconciliation pause survive restarts | Implemented, tested (restart tests) |
-| **Auth**: wallet challenge/verify for consumers; scrypt email+password for merchants/admins with lockout, logout, disable; merchant context resolved per request | Implemented, tested |
-| Exchange quote -> intent -> submit state machine (idempotency keys, write-ahead SUBMITTED, RECONCILING on unknown outcome, stale quote / revoked issuer blocks, recovery method) | Implemented, tested incl. concurrent duplicates |
-| Reconciliation consumer (contract v1.0, strict, fail-closed, dedupe by event id, discrepancy pauses sensitive actions) | Implemented, tested |
-| Redemption (verified credit only, signed limits, merchant confirms after ledger-confirmed return, rejection flags `refundDue`) | Implemented, tested |
-| **`GET /v1/portfolio`**: ledger balances classified REDEEMABLE / SUPPORTED_ASSET / UNVERIFIED / SUSPENDED / EXPIRED / FROZEN | Implemented, tested (fake gateway) |
-| **Disputes**: open on own redemption/exchange, scoped visibility, merchant response window + escalation, admin ruling (records only, never moves funds) | Implemented, tested |
-| **`HttpStellarGateway`**: real adapter for the unbound-stellar gateway service (strict response validation, timeouts, unknown outcome throws) | Implemented; contract-tested with shared fixtures |
-| **Cross-repo tests**: fixture parity with `../Unbound-stellar` and a real core<->gateway-service exchange/failure/reconcile/redemption run | Implemented; run when the sibling checkout exists (SimulatedLedger behind the gateway, not Testnet) |
-| Dev seed (synthetic) and Dockerfile/docker-compose | Seed tested. Compose is only syntax-checked (`docker compose config`); containers never built or run |
-| Audit trail; OpenAPI 3.1 (snapshot-tested) | Implemented |
-| **PostgreSQL/Prisma** | **Not done.** SQLite behind the `Repository` port is the interim durable store (documents + JSON filter in memory; not for scale) |
-| **Live Testnet / real Horizon** | **Never run.** The gateway service (in unbound-stellar) uses Horizon adapters that are type-checked and mapping-tested only |
-| NestJS, Redis/BullMQ queues, rate limiting (except login lockout), email verification/password reset, MFA | Not done |
-| Scheduled jobs (`recoverStuck`, `escalateOverdue` are callable, not scheduled) | Not done |
+| Merchant apply, admin verify (evidence required), revoke; revocation suspends programs immediately | Built |
+| Signed redemption policy (ed25519 by the issuer key, strict schema, expiry, explicit tokenization + transfer permission) | Built |
+| Durable SQLite storage behind a `Storage` port, with migrations and restart tests | Built (interim store, not for scale) |
+| Auth: wallet challenge/verify for consumers; scrypt password + lockout for merchants and admins | Built |
+| Exchange quote -> intent -> submit state machine (idempotency, write-ahead submit, RECONCILING on unknown outcome) | Built, incl. concurrent duplicates |
+| Reconciliation consumer (contract v1.0, fail-closed, dedupe; discrepancies pause sensitive actions) | Built |
+| Redemptions (confirm only after ledger-confirmed return; rejection flags a refund) and disputes | Built |
+| `GET /v1/portfolio` classification; OpenAPI 3.1 snapshot; audit trail | Built |
+| `HttpStellarGateway` + cross-repo tests against a real `Unbound-stellar` gateway on its simulator | Built (runs when the sibling checkout exists) |
+| Docker / docker-compose | Written; only syntax-checked, never run |
+| PostgreSQL, queues, rate limiting beyond login lockout, email verification, password reset, MFA, scheduled jobs | Not yet |
+| Live Stellar Testnet run, CORS for cross-origin browsers, production deployment, external audit | Not yet |
 
 ## Contracts
-- `openapi/openapi.json` - v1 HTTP contract (additive endpoints are labeled in the document).
-- `fixtures/reconciliation-event.confirmed.v1.json` and `fixtures/reconciliation-event.stellar-schema.v1.json` are copies of the
-  producer's (`unbound-stellar`) golden fixture and schema; a test fails if our consumer schema drifts from the snapshot.
-- Idempotency: `Idempotency-Key` header on `POST /v1/exchange/intents`, `.../submit`, `POST /v1/redemptions`.
 
-## Security notes
-No secrets in the repo; keys in tests are generated per run. The service accepts only `TESTNET`. It never receives
-a user secret, never stores signed transactions in audit data, and never parses/builds Stellar transactions.
+- [`openapi/openapi.json`](./openapi/openapi.json) - HTTP v1 contract (snapshot-tested).
+- `fixtures/reconciliation-event.*.v1.json` - copies of the producer's (`Unbound-stellar`) golden fixture and schema; a test fails on drift.
+- `fixtures/gateway/*.json` - gateway service contract, byte-identical to `Unbound-stellar`'s copy.
+- Idempotency: `Idempotency-Key` header on `POST /v1/exchange/intents`, `.../submit` and `POST /v1/redemptions`.
 
-## Sibling versions
-Developed against `unbound-stellar` / `unbound-site` / `unbound-mobile` at their `main` branches (untagged).
+## The four repositories
 
-## Minimal integration contract
-Always test the dependency path stated in ARCHITECTURE.md. Every new public endpoint/ABI/package message must be versioned and covered by consumer fixtures. See `docs/SRD.md` and `docs/TECHNICAL_BUILD.md`.
+| Repository | Owns | Stack | CI |
+|---|---|---|---|
+| [Unbound-core](https://github.com/Unbound224/Unbound-core) (this repo) | Backend API: issuers, policies, intents, redemptions, audit | TypeScript, Node 22, SQLite | [![CI](https://github.com/Unbound224/Unbound-core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-core/actions/workflows/ci.yml) |
+| [Unbound-stellar](https://github.com/Unbound224/Unbound-stellar) | Stellar SDK, gateway service and chain worker | TypeScript, @stellar/stellar-sdk | [![CI](https://github.com/Unbound224/Unbound-stellar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-stellar/actions/workflows/ci.yml) |
+| [Unbound-site](https://github.com/Unbound224/Unbound-site) | Landing page, partner docs and merchant console | Next.js 16, React 19, Tailwind 4 | [![CI](https://github.com/Unbound224/Unbound-site/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-site/actions/workflows/ci.yml) |
+| [Unbound-mobile](https://github.com/Unbound224/Unbound-mobile) | Flutter consumer wallet | Flutter, Dart, Riverpod | [![CI](https://github.com/Unbound224/Unbound-mobile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-mobile/actions/workflows/ci.yml) |
 
-## Drips Wave
-Stellar is essential: Native asset issuance: merchant issuance identity and redemption promise live off-chain, asset code+issuer on Stellar. Approval/eligibility for Wave depends on substantive open-source implementation and organizer review, not repo count.
+## Contributing and Drips Wave
 
+Contributions are welcome. Start with [`CONTRIBUTING.md`](./CONTRIBUTING.md), then pick from the scoped, testable ideas in
+[`docs/CONTRIBUTOR_ISSUES.md`](./docs/CONTRIBUTOR_ISSUES.md). Unbound intends to take part in
+[Drips Wave](https://docs.drips.network/wave/maintainers/participating-in-a-wave/); that is subject to Drips' review and
+limits, and no rewards are promised. Wave issues are opened only once their dependencies and acceptance tests are ready.
+Everyone agrees to the [Code of Conduct](./CODE_OF_CONDUCT.md).
 
-## Official project identity
+## Security
 
-The project uses the **approved flat SVG logo** in [`brand/icon.svg`](./brand/icon.svg), with an editable transparent vector mark in [`brand/mark.svg`](./brand/mark.svg). The [512 px GitHub organization avatar](./brand/org-avatar.png) is in the same directory. This logo is shared by all four project repositories. UI design remains intentionally flexible.
+Please report vulnerabilities privately (Security tab, **Report a vulnerability**) as described in
+[`SECURITY.md`](./SECURITY.md). The threat model is in [`docs/SECURITY.md`](./docs/SECURITY.md). Testnet only: never use
+real funds, real customer data or Mainnet keys with this code.
+
+## Documentation
+
+[`docs/PRD.md`](./docs/PRD.md) (product) · [`docs/SRD.md`](./docs/SRD.md) (requirements, API, states) ·
+[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) · [`docs/TECHNICAL_BUILD.md`](./docs/TECHNICAL_BUILD.md) ·
+[`docs/ROADMAP.md`](./docs/ROADMAP.md) · [`docs/BRAND.md`](./docs/BRAND.md) · [`AGENTS.md`](./AGENTS.md) (rules for coding agents).
+The canonical copy of the shared docs lives in [Unbound-core](https://github.com/Unbound224/Unbound-core/tree/main/docs).
+
+## License
+
+[MIT](./LICENSE). The Unbound logo in [`brand/`](./brand) is the project's approved identity and is shared by all four
+repositories; it has not been trademark-cleared.

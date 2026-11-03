@@ -14,7 +14,7 @@ import type { Actor } from './common/auth.js';
 import { WalletService } from './modules/wallets/service.js';
 
 /** Composition root. All persistence is in-memory (see README status). */
-export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage }) {
+export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage; escrowWindowSecs?: number }) {
   const clock = opts.clock ?? systemClock;
   const storage = opts.storage ?? new InMemoryStorage();
   const audit = new AuditLog(clock, storage.repo('audit_events'));
@@ -25,7 +25,7 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
   const common = { clock, audit, issuers, wallets, gateway: opts.gateway, guard, storage };
   const portfolio = new PortfolioService(common);
   const exchange = new ExchangeService(common);
-  const redemption = new RedemptionService(common);
+  const redemption = new RedemptionService({ ...common, ...(opts.escrowWindowSecs ? { escrowWindowSecs: opts.escrowWindowSecs } : {}) });
   const reconciliation = new ReconciliationService({ clock, audit, guard, storage });
   const disputes = new DisputeService({ clock, audit, exchange, redemption, storage });
   reconciliation.register((o, r) => exchange.onObservation(o, r));

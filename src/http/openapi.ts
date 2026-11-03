@@ -72,7 +72,15 @@ export function buildOpenApi() {
       '/v1/redemptions/{id}': { get: op({ summary: 'Get redemption state' }) },
       '/v1/redemptions/{id}/return': { post: op({ summary: 'Submit the user-signed return (burn) payment', status: '202', extra: true }) },
       '/v1/merchants/me/redemptions': { get: op({ summary: "List the calling merchant's redemptions" }) },
-      '/v1/merchants/me/redemptions/{id}/confirm': { post: op({ summary: 'Merchant confirms fulfilment after the return is ledger-confirmed' }) },
+      '/v1/merchants/me/redemptions/{id}/confirm': {
+        post: op({ summary: 'Merchant confirms fulfilment after the return is ledger-confirmed. NATIVE: 200 FULFILLED. ESCROW: 202 with escrow.pendingXdr (issuer-signed confirm invocation)' }),
+      },
+      '/v1/merchants/me/redemptions/{id}/reject': {
+        post: op({ summary: 'Merchant rejects with a reason. NATIVE: 200 REJECTED with refundDue. ESCROW: 202 with the issuer-signed reject (on-chain refund)', extra: true }),
+      },
+      '/v1/merchants/me/redemptions/{id}/escrow/submit': { post: op({ summary: 'Submit the issuer-signed escrow confirm/reject transaction', status: '202', extra: true }) },
+      '/v1/redemptions/{id}/refund': { post: op({ summary: 'Holder requests the escrow timeout refund (after the deadline); returns escrow.pendingXdr to sign', status: '202', extra: true }) },
+      '/v1/redemptions/{id}/escrow/submit': { post: op({ summary: 'Submit the holder-signed escrow timeout refund', status: '202', extra: true }) },
       '/v1/merchants/me/assets': { post: op({ summary: 'Register a credit program with a signed redemption policy', status: '201', extra: true }) },
       '/v1/admin/merchants/{id}/verify': { post: op({ summary: 'Admin verifies a merchant with an evidence reference', extra: true }) },
       '/v1/admin/ledger-events': { post: op({ summary: 'Ingest a reconciliation event from unbound-stellar', req: 'ReconciliationEvent', status: '201', extra: true }) },

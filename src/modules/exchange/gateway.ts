@@ -66,6 +66,41 @@ export interface GatewayBalance {
   isAuthorized: boolean;
 }
 
+/** An unsigned Soroban invocation of the redemption escrow (unbound-stellar ADR 0002). */
+export interface UnsignedEscrowTx extends UnsignedSettlement {
+  contractId: string;
+  fn: 'open_return' | 'confirm' | 'reject' | 'expire_refund';
+  redemptionKeyHex: string;
+}
+
+export type EscrowChainStatus = 'OPEN' | 'CONFIRMED' | 'REJECTED' | 'EXPIRED';
+
+export interface EscrowReturnView {
+  consumer: string;
+  issuer: string;
+  token: string;
+  /** 7-dp decimal string */
+  amount: string;
+  /** unix seconds */
+  deadline: number;
+  openedAt: number;
+  status: EscrowChainStatus;
+  closedAt: number | null;
+}
+
+/**
+ * Optional escrow capability of the gateway. Every method may throw GatewayError with an
+ * ESCROW_* code (ESCROW_UNAVAILABLE when no contract is configured); core then uses the native
+ * return payment instead (ADR 0002).
+ */
+export interface RedemptionEscrowGateway {
+  open(args: { asset: { code: string; issuer: string }; holder: string; amount: string; redemptionId: string; deadline: number }): Promise<UnsignedEscrowTx>;
+  confirm(args: { redemptionId: string; issuer: string }): Promise<UnsignedEscrowTx>;
+  reject(args: { redemptionId: string; issuer: string }): Promise<UnsignedEscrowTx>;
+  expire(args: { redemptionId: string; source: string }): Promise<UnsignedEscrowTx>;
+  getReturn(redemptionId: string): Promise<{ contractId: string; return: EscrowReturnView | null }>;
+}
+
 export interface StellarGateway {
   /** Ledger balances for an account; empty list when the account does not exist yet. */
   balances(account: string): Promise<GatewayBalance[]>;
@@ -75,7 +110,11 @@ export interface StellarGateway {
   buildRedemptionReturn(args: { asset: { code: string; issuer: string }; holder: string; amount: string; idempotencyKey: string }): Promise<UnsignedSettlement>;
   /** Throws (any error) when the outcome is unknown; core then records RECONCILING. */
   submit(args: { signedXdr: string; expectedHash: string }): Promise<GatewayOutcome>;
+  /** Soroban redemption escrow; absent when the deployment has none (native returns only). */
+  readonly escrow?: RedemptionEscrowGateway;
 }
+
+export const isEscrowError = (e: unknown): boolean => e instanceof GatewayError && e.code.startsWith('ESCROW_');
 
 /** Translate a gateway rejection into the public error taxonomy. */
 export function mapGatewayError(e: unknown): ApiError {
@@ -97,6 +136,9 @@ export function mapGatewayError(e: unknown): ApiError {
       case 'ACCOUNT_MISSING':
       case 'INVALID_AMOUNT':
       case 'INVALID_SLIPPAGE':
+      case 'ESCROW_INVALID':
+      case 'ESCROW_REJECTED':
+      case 'ESCROW_UNAVAILABLE':
         return new ApiError('GATEWAY_REJECTED', e.message, e.code);
       default:
         return new ApiError('GATEWAY_REJECTED', 'the Stellar adapter rejected this request', e.code);

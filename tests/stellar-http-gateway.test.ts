@@ -66,4 +66,38 @@ describe('HttpStellarGateway (fixtures follow the gateway contract; no live serv
     const u = await gw(f as unknown as typeof fetch).buildSettlement({ quote: fx('quote') as never, sourceAccount: 'G1', destinationAccount: 'G1', idempotencyKey: 'int_1' });
     expect(u.hash).toMatch(/^[0-9a-f]{64}$/);
   });
+
+  it('escrow is absent unless the deployment opts in', () => {
+    expect(gw(vi.fn() as unknown as typeof fetch).escrow).toBeUndefined();
+  });
+
+  it('escrow: builds and reads through the documented endpoints, validating the shared fixtures', async () => {
+    const f = vi.fn().mockImplementation(async (url: string) => json(fx(url.includes('/returns/') ? 'escrow-return' : 'escrow-built')));
+    const g = new HttpStellarGateway({ baseUrl: 'http://stellar.test', token: 't', fetchImpl: f as unknown as typeof fetch, escrow: true });
+    const built = await g.escrow!.open({ asset: { code: 'SHOP', issuer: 'G1' }, holder: 'G3', amount: '80', redemptionId: 'red_1', deadline: 1 });
+    expect(built.fn).toBe('open_return');
+    await g.escrow!.confirm({ redemptionId: 'red_1', issuer: 'G1' });
+    await g.escrow!.reject({ redemptionId: 'red_1', issuer: 'G1' });
+    await g.escrow!.expire({ redemptionId: 'red_1', source: 'G3' });
+    const r = await g.escrow!.getReturn('red_fixture0001');
+    expect(r.return?.status).toBe('OPEN');
+    expect(f.mock.calls.map((c) => c[0])).toEqual([
+      'http://stellar.test/gateway/v1/escrow/open',
+      'http://stellar.test/gateway/v1/escrow/confirm',
+      'http://stellar.test/gateway/v1/escrow/reject',
+      'http://stellar.test/gateway/v1/escrow/expire',
+      'http://stellar.test/gateway/v1/escrow/returns/red_fixture0001',
+    ]);
+  });
+
+  it('escrow: ESCROW_UNAVAILABLE becomes a typed GatewayError; a malformed body fails closed', async () => {
+    const unavailable = { error: { code: 'ESCROW_UNAVAILABLE', message: 'not configured' } };
+    const g = new HttpStellarGateway({ baseUrl: 'http://s', token: 't', fetchImpl: vi.fn().mockResolvedValue(json(unavailable, 422)) as unknown as typeof fetch, escrow: true });
+    const e = await g.escrow!.open({ asset: { code: 'SHOP', issuer: 'G1' }, holder: 'G3', amount: '1', redemptionId: 'red_1', deadline: 1 }).catch((x) => x);
+    expect(e).toBeInstanceOf(GatewayError);
+    expect(e.code).toBe('ESCROW_UNAVAILABLE');
+    const bad = { ...fx('escrow-built'), fn: 'drain' };
+    const g2 = new HttpStellarGateway({ baseUrl: 'http://s', token: 't', fetchImpl: vi.fn().mockResolvedValue(json(bad)) as unknown as typeof fetch, escrow: true });
+    await expect(g2.escrow!.confirm({ redemptionId: 'red_1', issuer: 'G1' })).rejects.toThrow(/contract/);
+  });
 });

@@ -8,6 +8,9 @@ import { createHash } from 'node:crypto';
 import { formatAmount, parseAmount } from '../common/money.js';
 import {
   GatewayError,
+  type EscrowReturnView,
+  type RedemptionEscrowGateway,
+  type UnsignedEscrowTx,
   type GatewayBalance,
   type GatewayOutcome,
   type GatewayQuote,
@@ -34,13 +37,23 @@ export class FakeStellarGateway implements StellarGateway {
   private n = 0;
   balancesByAccount = new Map<string, GatewayBalance[]>();
   balanceError: Error | undefined;
+  /** In-memory stand-in for the Soroban escrow; set to undefined to emulate a deployment without one. */
+  escrow: FakeEscrow | undefined;
 
   async balances(account: string): Promise<GatewayBalance[]> {
     if (this.balanceError) throw this.balanceError;
     return this.balancesByAccount.get(account) ?? [];
   }
 
-  constructor(private readonly now: () => number) {}
+  constructor(private readonly now: () => number) {
+    this.escrow = undefined;
+  }
+
+  /** Opt in to the emulated Soroban escrow (off by default, like a deployment without the contract). */
+  enableEscrow(): FakeEscrow {
+    this.escrow ??= new FakeEscrow(this.now, (seed) => this.fakeTx(seed));
+    return this.escrow;
+  }
 
   async quote(input: QuoteInput): Promise<GatewayQuote> {
     if (!this.hasLiquidity) throw new GatewayError('NO_ROUTE', 'no route');
@@ -90,6 +103,7 @@ export class FakeStellarGateway implements StellarGateway {
         throw new Error('timeout');
       case 'timeout-after-apply':
         this.applied.add(hash);
+        this.escrow?.apply(hash);
         throw new Error('timeout');
       case 'reject-min-output':
         return { state: 'FAILED', hash, reason: 'MIN_OUTPUT_VIOLATION' };
@@ -97,11 +111,12 @@ export class FakeStellarGateway implements StellarGateway {
         return { state: 'CONFIRMED', hash: 'f'.repeat(64), ledger: 1 };
       default:
         this.applied.add(hash);
+        this.escrow?.apply(hash);
         return { state: 'CONFIRMED', hash, ledger: 1000 + this.applied.size, amountOutActual: '72.0000000' };
     }
   }
 
-  private fakeTx(seed: string): UnsignedSettlement {
+  fakeTx(seed: string): UnsignedSettlement {
     const hash = createHash('sha256').update(seed).digest('hex');
     return { xdr: `FAKE-XDR:${hash}`, hash, networkPassphrase: this.networkPassphrase };
   }
@@ -109,4 +124,96 @@ export class FakeStellarGateway implements StellarGateway {
 
 export function signFake(unsignedXdr: string): string {
   return `SIGNED:${unsignedXdr}`;
+}
+
+export const FAKE_ESCROW_CONTRACT = 'CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR';
+
+type Planned = { fn: UnsignedEscrowTx['fn']; redemptionId: string; open?: Omit<EscrowReturnView, 'status' | 'closedAt' | 'openedAt'> };
+
+/**
+ * FakeEscrow - TEST ADAPTER emulating the redemption-escrow contract's rules (single-use ids,
+ * confirm before the deadline, reject while open, anyone-can-refund after the deadline). A built
+ * transaction only takes effect when the fake gateway "confirms" its hash, like the real ledger.
+ * The real contract and its tests live in unbound-stellar/contracts/redemption-escrow.
+ */
+export class FakeEscrow implements RedemptionEscrowGateway {
+  unavailable = false;
+  readonly returns = new Map<string, EscrowReturnView>();
+  private readonly planned = new Map<string, Planned>();
+
+  constructor(
+    private readonly now: () => number,
+    private readonly tx: (seed: string) => UnsignedSettlement,
+  ) {}
+
+  private nowSec(): number {
+    return Math.floor(this.now() / 1000);
+  }
+
+  private build(p: Planned): UnsignedEscrowTx {
+    if (this.unavailable) throw new GatewayError('ESCROW_UNAVAILABLE', 'no escrow configured');
+    const t = this.tx(`escrow:${p.fn}:${p.redemptionId}:${this.planned.size}`);
+    this.planned.set(t.hash, p);
+    return { ...t, contractId: FAKE_ESCROW_CONTRACT, fn: p.fn, redemptionKeyHex: createHash('sha256').update(p.redemptionId).digest('hex') };
+  }
+
+  private open_(id: string): EscrowReturnView {
+    const r = this.returns.get(id);
+    if (!r || r.status !== 'OPEN') throw new GatewayError('ESCROW_REJECTED', 'escrow simulation failed: NotOpen');
+    return r;
+  }
+
+  async open(a: { asset: { code: string; issuer: string }; holder: string; amount: string; redemptionId: string; deadline: number }): Promise<UnsignedEscrowTx> {
+    if (this.returns.has(a.redemptionId)) throw new GatewayError('ESCROW_REJECTED', 'escrow simulation failed: DuplicateRedemption');
+    if (a.deadline < this.nowSec() + 3600) throw new GatewayError('ESCROW_INVALID', 'deadline too soon');
+    return this.build({ fn: 'open_return', redemptionId: a.redemptionId, open: { consumer: a.holder, issuer: a.asset.issuer, token: FAKE_ESCROW_CONTRACT, amount: a.amount, deadline: a.deadline } });
+  }
+
+  async confirm(a: { redemptionId: string; issuer: string }): Promise<UnsignedEscrowTx> {
+    const r = this.open_(a.redemptionId);
+    if (this.nowSec() >= r.deadline) throw new GatewayError('ESCROW_REJECTED', 'escrow simulation failed: DeadlinePassed');
+    return this.build({ fn: 'confirm', redemptionId: a.redemptionId });
+  }
+
+  async reject(a: { redemptionId: string; issuer: string }): Promise<UnsignedEscrowTx> {
+    this.open_(a.redemptionId);
+    return this.build({ fn: 'reject', redemptionId: a.redemptionId });
+  }
+
+  async expire(a: { redemptionId: string; source: string }): Promise<UnsignedEscrowTx> {
+    const r = this.open_(a.redemptionId);
+    if (this.nowSec() < r.deadline) throw new GatewayError('ESCROW_REJECTED', 'escrow simulation failed: DeadlineNotReached');
+    return this.build({ fn: 'expire_refund', redemptionId: a.redemptionId });
+  }
+
+  async getReturn(redemptionId: string): Promise<{ contractId: string; return: EscrowReturnView | null }> {
+    if (this.unavailable) throw new GatewayError('ESCROW_UNAVAILABLE', 'no escrow configured');
+    const r = this.returns.get(redemptionId);
+    return { contractId: FAKE_ESCROW_CONTRACT, return: r ? { ...r } : null };
+  }
+
+  /** Applies a planned invocation when its transaction "lands" (called by FakeStellarGateway.submit). */
+  apply(hash: string): void {
+    const p = this.planned.get(hash);
+    if (!p) return;
+    this.planned.delete(hash);
+    const t = this.nowSec();
+    if (p.fn === 'open_return' && p.open) {
+      this.returns.set(p.redemptionId, { ...p.open, openedAt: t, status: 'OPEN', closedAt: null });
+      return;
+    }
+    const r = this.returns.get(p.redemptionId);
+    if (!r || r.status !== 'OPEN') return;
+    r.status = p.fn === 'confirm' ? 'CONFIRMED' : p.fn === 'reject' ? 'REJECTED' : 'EXPIRED';
+    r.closedAt = t;
+  }
+
+  /** Emulates someone else (not core) closing the escrow on-chain, e.g. a direct expire_refund. */
+  closeOutOfBand(redemptionId: string, status: 'CONFIRMED' | 'REJECTED' | 'EXPIRED'): void {
+    const r = this.returns.get(redemptionId);
+    if (r) {
+      r.status = status;
+      r.closedAt = this.nowSec();
+    }
+  }
 }

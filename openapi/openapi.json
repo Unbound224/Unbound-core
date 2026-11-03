@@ -674,7 +674,7 @@
     },
     "/v1/merchants/me/redemptions/{id}/confirm": {
       "post": {
-        "summary": "Merchant confirms fulfilment after the return is ledger-confirmed",
+        "summary": "Merchant confirms fulfilment after the return is ledger-confirmed. NATIVE: 200 FULFILLED. ESCROW: 202 with escrow.pendingXdr (issuer-signed confirm invocation)",
         "security": [
           {
             "bearerAuth": []
@@ -682,6 +682,106 @@
         ],
         "responses": {
           "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/me/redemptions/{id}/reject": {
+      "post": {
+        "summary": "Merchant rejects with a reason. NATIVE: 200 REJECTED with refundDue. ESCROW: 202 with the issuer-signed reject (on-chain refund) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/me/redemptions/{id}/escrow/submit": {
+      "post": {
+        "summary": "Submit the issuer-signed escrow confirm/reject transaction (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/redemptions/{id}/refund": {
+      "post": {
+        "summary": "Holder requests the escrow timeout refund (after the deadline); returns escrow.pendingXdr to sign (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/redemptions/{id}/escrow/submit": {
+      "post": {
+        "summary": "Submit the holder-signed escrow timeout refund (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
             "description": "OK"
           },
           "default": {

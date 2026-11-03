@@ -112,23 +112,50 @@ const routes: Route[] = [
   {
     method: 'POST',
     pattern: /^\/v1\/redemptions$/,
-    handler: async (c) => ok(publicRedemption(await c.app.redemption.create(c.actor, c.body, c.idempotencyKey, c.requestId)), 201),
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.create(c.actor, c.body, c.idempotencyKey, c.requestId), c.app.clock.now()), 201),
   },
-  { method: 'GET', pattern: /^\/v1\/redemptions\/([\w-]+)$/, handler: async (c) => ok(publicRedemption(await c.app.redemption.get(c.actor, c.params[0]!))) },
+  { method: 'GET', pattern: /^\/v1\/redemptions\/([\w-]+)$/, handler: async (c) => ok(publicRedemption(await c.app.redemption.get(c.actor, c.params[0]!), c.app.clock.now())) },
   {
     method: 'POST',
     pattern: /^\/v1\/redemptions\/([\w-]+)\/return$/,
-    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitReturn(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId)), 202),
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitReturn(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId), c.app.clock.now()), 202),
   },
   {
     method: 'GET',
     pattern: /^\/v1\/merchants\/me\/redemptions$/,
-    handler: async (c) => ok({ redemptions: (await c.app.redemption.listForMerchant(c.actor)).map(publicRedemption) }),
+    handler: async (c) => ok({ redemptions: (await c.app.redemption.listForMerchant(c.actor)).map((r) => publicRedemption(r, c.app.clock.now())) }),
   },
   {
     method: 'POST',
     pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/confirm$/,
-    handler: async (c) => ok(publicRedemption(await c.app.redemption.merchantConfirm(c.actor, c.params[0]!, c.requestId))),
+    handler: async (c) => {
+      const r = await c.app.redemption.merchantConfirm(c.actor, c.params[0]!, c.requestId);
+      // escrow mode: 202 with the issuer transaction to sign; FULFILLED only after the ledger confirms it
+      return ok(publicRedemption(r, c.app.clock.now()), r.state === 'FULFILLED' ? 200 : 202);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/reject$/,
+    handler: async (c) => {
+      const r = await c.app.redemption.merchantReject(c.actor, c.params[0]!, str(asObj(c.body), 'reason'), c.requestId);
+      return ok(publicRedemption(r, c.app.clock.now()), r.state === 'REJECTED' ? 200 : 202);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/escrow\/submit$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitEscrowAction(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId), c.app.clock.now()), 202),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/redemptions\/([\w-]+)\/refund$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.claimRefund(c.actor, c.params[0]!, c.requestId), c.app.clock.now()), 202),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/redemptions\/([\w-]+)\/escrow\/submit$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitEscrowAction(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId), c.app.clock.now()), 202),
   },
   {
     method: 'POST',
@@ -190,7 +217,8 @@ function publicAsset(p: Awaited<ReturnType<App['issuers']['getAsset']>>) {
   return { id: p.id, assetCode: p.assetCode, issuer: p.issuerPublicKey, status: p.status, policy: p.policy };
 }
 
-function publicRedemption(r: Awaited<ReturnType<App['redemption']['get']>>) {
+function publicRedemption(r: Awaited<ReturnType<App['redemption']['get']>>, now: Date = new Date()) {
+  const e = r.escrow;
   return {
     id: r.id,
     state: r.state,
@@ -201,6 +229,20 @@ function publicRedemption(r: Awaited<ReturnType<App['redemption']['get']>>) {
     unsignedXdr: r.state === 'AWAITING_RETURN' ? (r.unsignedXdr ?? null) : null,
     refundDue: r.refundDue ?? false,
     rejectionReason: r.rejectionReason ?? null,
+    mode: r.mode ?? 'NATIVE',
+    escrow: e
+      ? {
+          contractId: e.contractId,
+          deadline: new Date(e.deadline * 1000).toISOString(),
+          state: e.state,
+          refundAvailable: e.state === 'HELD' && !e.pending && now.getTime() >= e.deadline * 1000,
+          pendingAction: e.pending?.action ?? null,
+          pendingXdr: e.pending?.xdr ?? null,
+          pendingTxHash: e.pending?.hash ?? null,
+          closeTxHash: e.closeTxHash ?? null,
+          lastFailure: e.lastFailure ?? null,
+        }
+      : null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };

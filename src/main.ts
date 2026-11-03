@@ -17,8 +17,18 @@ const dbPath = process.env.DATABASE_FILE;
 const storage = dbPath ? new SqliteStorage(dbPath) : new InMemoryStorage();
 const gatewayUrl = process.env.STELLAR_GATEWAY_URL;
 const gatewayToken = process.env.STELLAR_GATEWAY_TOKEN;
-const gateway = gatewayUrl && gatewayToken ? new HttpStellarGateway({ baseUrl: gatewayUrl, token: gatewayToken }) : new FakeStellarGateway(() => Date.now());
-const app = createApp({ gateway, storage });
+// Soroban redemption escrow (ADR 0002): opt in per deployment; without it every redemption uses the native return.
+const escrowEnabled = process.env.STELLAR_ESCROW_ENABLED === 'true';
+const gateway =
+  gatewayUrl && gatewayToken
+    ? new HttpStellarGateway({ baseUrl: gatewayUrl, token: gatewayToken, escrow: escrowEnabled })
+    : (() => {
+        const fake = new FakeStellarGateway(() => Date.now());
+        if (escrowEnabled) fake.enableEscrow();
+        return fake;
+      })();
+const windowHours = Number(process.env.ESCROW_WINDOW_HOURS ?? 0);
+const app = createApp({ gateway, storage, ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 if (adminEmail && adminPassword && (await app.auth.bootstrapAdmin(adminEmail, adminPassword))) {

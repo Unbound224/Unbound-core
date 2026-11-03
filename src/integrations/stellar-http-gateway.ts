@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   GatewayError,
+  type RedemptionEscrowGateway,
   type GatewayBalance,
   type GatewayOutcome,
   type GatewayQuote,
@@ -47,13 +48,55 @@ const Outcome = z.discriminatedUnion('state', [
   z.object({ state: z.literal('RECONCILING'), hash: z.string().regex(/^[0-9a-f]{64}$/), detail: z.string().optional() }).strict(),
 ]);
 
+const EscrowTx = z
+  .object({
+    xdr: z.string().min(1),
+    hash: z.string().regex(/^[0-9a-f]{64}$/),
+    networkPassphrase: z.string(),
+    contractId: z.string().regex(/^C[A-Z2-7]{55}$/),
+    fn: z.enum(['open_return', 'confirm', 'reject', 'expire_refund']),
+    redemptionKeyHex: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+const EscrowReturn = z
+  .object({
+    contractId: z.string().regex(/^C[A-Z2-7]{55}$/),
+    return: z
+      .object({
+        consumer: z.string(),
+        issuer: z.string(),
+        token: z.string(),
+        amount: Amount7,
+        deadline: z.number().int(),
+        openedAt: z.number().int(),
+        status: z.enum(['OPEN', 'CONFIRMED', 'REJECTED', 'EXPIRED']),
+        closedAt: z.number().int().nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
 const Balances = z.object({ balances: z.array(z.object({ asset: Asset, balance: Amount7, isAuthorized: z.boolean() }).strict()) }).strict();
 const ErrorBody = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
 
 export class HttpStellarGateway implements StellarGateway {
+  /** Present only when the deployment opted in (STELLAR_ESCROW_ENABLED); the service may still answer ESCROW_UNAVAILABLE. */
+  readonly escrow?: RedemptionEscrowGateway;
+
   constructor(
-    private readonly opts: { baseUrl: string; token: string; fetchImpl?: typeof fetch; timeoutMs?: number },
-  ) {}
+    private readonly opts: { baseUrl: string; token: string; fetchImpl?: typeof fetch; timeoutMs?: number; escrow?: boolean },
+  ) {
+    if (opts.escrow) {
+      const enc = encodeURIComponent;
+      this.escrow = {
+        open: (a) => this.call('POST', '/gateway/v1/escrow/open', EscrowTx, a),
+        confirm: (a) => this.call('POST', '/gateway/v1/escrow/confirm', EscrowTx, a),
+        reject: (a) => this.call('POST', '/gateway/v1/escrow/reject', EscrowTx, a),
+        expire: (a) => this.call('POST', '/gateway/v1/escrow/expire', EscrowTx, a),
+        getReturn: (id) => this.call('GET', `/gateway/v1/escrow/returns/${enc(id)}`, EscrowReturn),
+      };
+    }
+  }
 
   quote(input: QuoteInput): Promise<GatewayQuote> {
     return this.call('POST', '/gateway/v1/quote', QuoteSchema, input) as Promise<GatewayQuote>;

@@ -52,6 +52,8 @@ export function buildOpenApi() {
       '/v1/assets/{id}': { get: op({ summary: 'Get an eligible asset and its signed redemption policy', res: 'RedemptionPolicy', auth: false }) },
       '/v1/auth/register': { post: op({ summary: 'Register a merchant account (email + password >= 12 chars). Grants no authority until an admin verifies the merchant', status: '201', auth: false, extra: true }) },
       '/v1/auth/login': { post: op({ summary: 'Log in with email/password; returns a bearer token. Locks the account after repeated failures', auth: false, extra: true }) },
+      '/v1/auth/password-reset': { post: op({ summary: 'Request a password-reset email. Always 202, whether or not the account exists. At most 3 per account per hour', status: '202', auth: false, extra: true }) },
+      '/v1/auth/password-reset/confirm': { post: op({ summary: 'Set a new password with the single-use token from the email (valid 30 minutes). Ends all sessions of the account', auth: false, extra: true }) },
       '/v1/auth/logout': { post: op({ summary: 'Revoke the current session', extra: true }) },
       '/v1/admin/accounts': { post: op({ summary: 'Admin creates an admin or merchant account', status: '201', extra: true }) },
       '/v1/wallets/challenge': { post: op({ summary: 'Create a one-time wallet challenge', auth: false }) },

@@ -153,6 +153,46 @@
         }
       }
     },
+    "/v1/auth/password-reset": {
+      "post": {
+        "summary": "Request a password-reset email. Always 202, whether or not the account exists. At most 3 per account per hour (additive; not in the initial SRD list)",
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/password-reset/confirm": {
+      "post": {
+        "summary": "Set a new password with the single-use token from the email (valid 30 minutes). Ends all sessions of the account (additive; not in the initial SRD list)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/logout": {
       "post": {
         "summary": "Revoke the current session (additive; not in the initial SRD list)",

@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { createHttpServer } from './http/server.js';
 import { parseAllowedOrigins } from './http/cors.js';
+import { OutboxMailer } from './common/mailer.js';
 import { InMemoryStorage, SqliteStorage } from './persistence/storage.js';
 import { HttpStellarGateway } from './integrations/stellar-http-gateway.js';
 import { FakeStellarGateway } from './testing/fake-gateway.js';
@@ -29,7 +30,10 @@ const gateway =
         return fake;
       })();
 const windowHours = Number(process.env.ESCROW_WINDOW_HOURS ?? 0);
-const app = createApp({ gateway, storage, log: (l) => console.log(l), ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
+// DEV ONLY: no email provider exists yet; reset emails are printed here instead of being sent.
+const mailer = new OutboxMailer((m) => console.log(`[dev-mail, NOT SENT] to=${m.to} subject="${m.subject}"\n${m.text}`));
+const resetUrl = process.env.PASSWORD_RESET_URL ?? 'http://localhost:3000/console/reset-password';
+const app = createApp({ gateway, storage, log: (l) => console.log(l), mail: { mailer, resetUrl }, ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 if (adminEmail && adminPassword && (await app.auth.bootstrapAdmin(adminEmail, adminPassword))) {

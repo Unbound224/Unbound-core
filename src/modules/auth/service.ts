@@ -1,4 +1,4 @@
-import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { AuditLog } from '../../common/audit.js';
@@ -9,6 +9,7 @@ import type { Repository } from '../../common/repository.js';
 import { KeyedMutex } from '../../common/repository.js';
 import type { Storage } from '../../persistence/storage.js';
 import type { WalletService } from '../wallets/service.js';
+import type { Mailer } from '../../common/mailer.js';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
@@ -28,6 +29,19 @@ interface LoginState {
   failures: number;
   lockedUntil: number;
 }
+
+interface PasswordReset {
+  /** sha256 of the emailed token; the token itself is never stored */
+  id: string;
+  accountId: string;
+  createdAt: number;
+  expiresAt: number;
+  usedAt?: number;
+}
+
+export const RESET_TTL_MS = 30 * 60_000;
+/** at most this many reset emails per account per hour; further requests are silently dropped */
+export const RESET_MAX_PER_HOUR = 3;
 
 export const MAX_FAILURES = 5;
 export const LOCK_MS = 15 * 60_000;
@@ -53,6 +67,10 @@ async function verifyPassword(pw: string, stored: string): Promise<boolean> {
   return timingSafeEqual(actual, expected);
 }
 
+function sha256(t: string): string {
+  return createHash('sha256').update(t).digest('hex');
+}
+
 // Verified against this when the email is unknown, so timing does not reveal which emails exist.
 const DUMMY_HASH = `scrypt$${'00'.repeat(16)}$${'00'.repeat(32)}`;
 
@@ -60,6 +78,7 @@ const DUMMY_HASH = `scrypt$${'00'.repeat(16)}$${'00'.repeat(32)}`;
 export class AuthService {
   private readonly accounts: Repository<Account>;
   private readonly logins: Repository<LoginState>;
+  private readonly resets: Repository<PasswordReset>;
   private readonly lock = new KeyedMutex();
 
   constructor(
@@ -67,9 +86,68 @@ export class AuthService {
     private readonly audit: AuditLog,
     private readonly wallets: WalletService,
     storage: Storage,
+    private readonly mail?: { mailer: Mailer; resetUrl: string },
   ) {
     this.accounts = storage.repo<Account>('accounts');
     this.logins = storage.repo<LoginState>('login_state');
+    this.resets = storage.repo<PasswordReset>('password_resets');
+  }
+
+  /**
+   * POST /v1/auth/password-reset. Always answers the same way, whether or not the email exists, so it
+   * cannot be used to discover accounts. Emails a single-use link valid for 30 minutes.
+   */
+  async requestPasswordReset(input: unknown, requestId: string): Promise<{ accepted: true }> {
+    const p = z.object({ email: z.string().trim().toLowerCase().email().max(200) }).strict().safeParse(input);
+    if (!p.success) throw new ApiError('VALIDATION_FAILED', 'a valid email is required');
+    const email = p.data.email;
+    const token = randomBytes(32).toString('base64url');
+    await this.lock.run(`reset:${email}`, async () => {
+      const account = (await this.accounts.find((a) => a.email === email))[0];
+      if (!account || account.disabled || !this.mail) return;
+      const now = this.clock.now().getTime();
+      const recent = await this.resets.find((r) => r.accountId === account.id && r.createdAt > now - 3_600_000);
+      if (recent.length >= RESET_MAX_PER_HOUR) {
+        await this.audit.record({ id: account.id, role: 'anonymous' }, 'auth', 'PASSWORD_RESET_THROTTLED', account.id, requestId);
+        return;
+      }
+      await this.resets.put({ id: sha256(token), accountId: account.id, createdAt: now, expiresAt: now + RESET_TTL_MS });
+      const link = `${this.mail.resetUrl}${this.mail.resetUrl.includes('?') ? '&' : '?'}token=${token}`;
+      await this.mail.mailer.send({
+        to: account.email,
+        subject: 'Reset your Unbound console password',
+        text: `Someone asked to reset the password for this Unbound console account.\n\nOpen this link within 30 minutes to choose a new password:\n${link}\n\nIf this was not you, ignore this email; your password stays the same.`,
+      });
+      await this.audit.record({ id: account.id, role: 'anonymous' }, 'auth', 'PASSWORD_RESET_REQUESTED', account.id, requestId);
+    });
+    return { accepted: true };
+  }
+
+  /** POST /v1/auth/password-reset/confirm. Single use; ends every session of the account. */
+  async confirmPasswordReset(input: unknown, requestId: string): Promise<{ ok: true }> {
+    const p = z
+      .object({ token: z.string().min(20).max(200), password: z.string().min(12, 'password must be at least 12 characters').max(200) })
+      .strict()
+      .safeParse(input);
+    if (!p.success) throw new ApiError('VALIDATION_FAILED', 'a reset token and a new password (min 12 characters) are required');
+    const id = sha256(p.data.token);
+    return this.lock.run(`reset-token:${id}`, async () => {
+      const now = this.clock.now().getTime();
+      const r = await this.resets.get(id);
+      const account = r ? await this.accounts.get(r.accountId) : undefined;
+      if (!r || r.usedAt !== undefined || r.expiresAt <= now || !account || account.disabled) {
+        throw new ApiError('UNAUTHENTICATED', 'this reset link is invalid or has expired; request a new one');
+      }
+      await this.accounts.put({ ...account, passwordHash: await hashPassword(p.data.password) });
+      // burn this token and every other outstanding one for the account
+      for (const other of await this.resets.find((x) => x.accountId === account.id && x.usedAt === undefined)) {
+        await this.resets.put({ ...other, usedAt: now });
+      }
+      await this.logins.put({ id: account.email, failures: 0, lockedUntil: 0 });
+      const revoked = await this.wallets.revokeAllFor(account.id);
+      await this.audit.record({ id: account.id, role: account.role }, 'auth', 'PASSWORD_RESET_COMPLETED', account.id, requestId, { sessionsRevoked: revoked });
+      return { ok: true };
+    });
   }
 
   /** Public self-registration creates a MERCHANT account only; it has no authority until an admin verifies the merchant. */

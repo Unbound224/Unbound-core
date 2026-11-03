@@ -163,6 +163,8 @@ const routes: Route[] = [
     pattern: /^\/v1\/auth\/register$/,
     handler: async (c) => ok(await c.app.auth.registerMerchant(c.body, c.requestId), 201),
   },
+  { method: 'POST', pattern: /^\/v1\/auth\/password-reset$/, handler: async (c) => ok(await c.app.auth.requestPasswordReset(c.body, c.requestId), 202) },
+  { method: 'POST', pattern: /^\/v1\/auth\/password-reset\/confirm$/, handler: async (c) => ok(await c.app.auth.confirmPasswordReset(c.body, c.requestId)) },
   { method: 'POST', pattern: /^\/v1\/auth\/login$/, handler: async (c) => ok(await c.app.auth.login(c.body, c.requestId)) },
   {
     method: 'POST',

@@ -14,16 +14,17 @@ import type { Actor } from './common/auth.js';
 import { WalletService } from './modules/wallets/service.js';
 import { JobRunner, type Scheduler } from './jobs/runner.js';
 import { defaultJobs } from './jobs/default-jobs.js';
+import type { Mailer } from './common/mailer.js';
 
 /** Composition root. All persistence is in-memory (see README status). */
-export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage; escrowWindowSecs?: number; scheduler?: Scheduler; log?: (line: string) => void }) {
+export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage; escrowWindowSecs?: number; scheduler?: Scheduler; log?: (line: string) => void; mail?: { mailer: Mailer; resetUrl: string } }) {
   const clock = opts.clock ?? systemClock;
   const storage = opts.storage ?? new InMemoryStorage();
   const audit = new AuditLog(clock, storage.repo('audit_events'));
   const guard = new OperationsGuard(audit, storage);
   const wallets = new WalletService(clock, audit, storage);
   const issuers = new IssuerService(clock, audit, storage);
-  const auth = new AuthService(clock, audit, wallets, storage);
+  const auth = new AuthService(clock, audit, wallets, storage, opts.mail);
   const common = { clock, audit, issuers, wallets, gateway: opts.gateway, guard, storage };
   const portfolio = new PortfolioService(common);
   const exchange = new ExchangeService(common);

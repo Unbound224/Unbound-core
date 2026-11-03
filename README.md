@@ -78,7 +78,9 @@ curl http://127.0.0.1:3001/v1/targets
 
 To use a real `Unbound-stellar` gateway instead of the fake, also set `STELLAR_GATEWAY_URL` and `STELLAR_GATEWAY_TOKEN`
 (see `.env.example`). Then point [Unbound-site](https://github.com/Unbound224/Unbound-site) at this server and sign in
-as the seeded merchant to see the console.
+as the seeded merchant to see the console. Useful dev switches: `CORS_ALLOWED_ORIGINS=http://localhost:3000` (browser
+on another origin), `STELLAR_ESCROW_ENABLED=true` (escrowed redemptions; the fake gateway emulates the contract),
+`JOBS_ENABLED=false` (no background jobs). Password-reset emails are printed to the server log, never sent.
 
 ## Project status
 
@@ -93,17 +95,23 @@ Legend: **Built** = implemented and covered by automated tests in this repo. **N
 | Exchange quote -> intent -> submit state machine (idempotency, write-ahead submit, RECONCILING on unknown outcome) | Built, incl. concurrent duplicates |
 | Reconciliation consumer (contract v1.0, fail-closed, dedupe; discrepancies pause sensitive actions) | Built |
 | Redemptions (confirm only after ledger-confirmed return; rejection flags a refund) and disputes | Built |
+| Escrowed redemptions through the Soroban escrow (via `StellarGateway.escrow`): issuer-signed confirm/reject, holder timeout refund, `EXPIRED` state, `reconcileEscrows`; native return as fallback (ADR 0002) | Built on the labeled `FakeEscrow`; cross-repo tested against the real gateway building real Soroban XDR; never run against a deployed contract |
+| CORS (`CORS_ALLOWED_ORIGINS`, exact origins, no credentials) | Built |
+| Scheduled maintenance jobs (stuck intents, overdue disputes, escrow reconciliation) with backoff and admin status / run-now | Built (single process; no distributed lock) |
+| Password reset (single-use hashed tokens, 30 min, throttled, ends sessions) | Built; email goes through a `Mailer` port with only the dev `OutboxMailer` (prints, never sends) |
+| Admin merchant review queue and revoke endpoints | Built |
 | `GET /v1/portfolio` classification; OpenAPI 3.1 snapshot; audit trail | Built |
 | `HttpStellarGateway` + cross-repo tests against a real `Unbound-stellar` gateway on its simulator | Built (runs when the sibling checkout exists) |
 | Docker / docker-compose | Written; only syntax-checked, never run |
-| PostgreSQL, queues, rate limiting beyond login lockout, email verification, password reset, MFA, scheduled jobs | Not yet |
-| Live Stellar Testnet run, CORS for cross-origin browsers, production deployment, external audit | Not yet |
+| PostgreSQL, queues, distributed job lock, rate limiting beyond login lockout, real email provider, email verification, MFA | Not yet |
+| Live Stellar Testnet run, production deployment, external audit | Not yet |
 
 ## Contracts
 
 - [`openapi/openapi.json`](./openapi/openapi.json) - HTTP v1 contract (snapshot-tested).
 - `fixtures/reconciliation-event.*.v1.json` - copies of the producer's (`Unbound-stellar`) golden fixture and schema; a test fails on drift.
-- `fixtures/gateway/*.json` - gateway service contract, byte-identical to `Unbound-stellar`'s copy.
+- `fixtures/gateway/*.json` - gateway service contract (incl. the escrow endpoints), byte-identical to `Unbound-stellar`'s copy.
+- [`docs/adr/0002-redemption-escrow-mode.md`](./docs/adr/0002-redemption-escrow-mode.md) - escrow mode and the native fallback.
 - Idempotency: `Idempotency-Key` header on `POST /v1/exchange/intents`, `.../submit` and `POST /v1/redemptions`.
 
 ## The four repositories
@@ -111,7 +119,7 @@ Legend: **Built** = implemented and covered by automated tests in this repo. **N
 | Repository | Owns | Stack | CI |
 |---|---|---|---|
 | [Unbound-core](https://github.com/Unbound224/Unbound-core) (this repo) | Backend API: issuers, policies, intents, redemptions, audit | TypeScript, Node 22, SQLite | [![CI](https://github.com/Unbound224/Unbound-core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-core/actions/workflows/ci.yml) |
-| [Unbound-stellar](https://github.com/Unbound224/Unbound-stellar) | Stellar SDK, gateway service and chain worker | TypeScript, @stellar/stellar-sdk | [![CI](https://github.com/Unbound224/Unbound-stellar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-stellar/actions/workflows/ci.yml) |
+| [Unbound-stellar](https://github.com/Unbound224/Unbound-stellar) | Stellar SDK, gateway service, chain worker, Soroban redemption escrow | TypeScript, @stellar/stellar-sdk, Rust/Soroban | [![CI](https://github.com/Unbound224/Unbound-stellar/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-stellar/actions/workflows/ci.yml) |
 | [Unbound-site](https://github.com/Unbound224/Unbound-site) | Landing page, partner docs and merchant console | Next.js 16, React 19, Tailwind 4 | [![CI](https://github.com/Unbound224/Unbound-site/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-site/actions/workflows/ci.yml) |
 | [Unbound-mobile](https://github.com/Unbound224/Unbound-mobile) | Flutter consumer wallet | Flutter, Dart, Riverpod | [![CI](https://github.com/Unbound224/Unbound-mobile/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Unbound224/Unbound-mobile/actions/workflows/ci.yml) |
 

@@ -29,6 +29,18 @@ For each asset the backend must store an independent, human-readable, signed red
 ```
 Values are **illustrative**, not actual quotes or usable addresses. Contract validation must reject untrusted issuers, unsupported assets, expired quotes, invalid amounts, missing trustlines and unapproved routes.
 
+### Redemption-return escrow (Soroban, the one contract)
+Redemption returns can go through `unbound-redemption-escrow` (soroban-sdk 29.0.1). The credit is still the classic
+issued asset; the contract moves it through the asset's Stellar Asset Contract.
+- `open_return(consumer, issuer, token, amount, redemption_id, deadline)`: consumer-authorized; `redemption_id` is
+  sha256 of core's redemption id and single-use forever; deadline 1 hour to 30 days ahead; `issuer` must be the SAC admin.
+- `confirm(id)` (issuer, before the deadline) -> credit to the issuer (burned); `reject(id)` (issuer, any time while
+  open) -> refund; `expire_refund(id)` (anyone, at/after the deadline) -> refund.
+- Invariant: escrow balance per token == `locked(token)` == sum of open returns.
+- Issuers with `AUTH_REQUIRED` must authorize the escrow contract on their SAC once (`set_authorized`).
+- Core uses it through `StellarGateway.escrow`; any `ESCROW_*` refusal falls back to the native return payment.
+- Not deployed yet: no Testnet contract id exists; `scripts/deploy-testnet.sh` in unbound-stellar is written, not run.
+
 ### Settlement observability
 - Transaction lifecycle: `CREATED → QUOTED → USER_APPROVED → SUBMITTED → CONFIRMED` or `RECONCILING/FAILED/CANCELLED`.
 - Key fields: `networkPassphrase`, `assetCode`, `issuer`, `amountIn`, `minOut`, `amountOutActual`, `sequence`, `memo`, `txHash`, `ledger`, `observedAt`, `reconciliationVersion`.

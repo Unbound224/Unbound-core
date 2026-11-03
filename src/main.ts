@@ -29,7 +29,7 @@ const gateway =
         return fake;
       })();
 const windowHours = Number(process.env.ESCROW_WINDOW_HOURS ?? 0);
-const app = createApp({ gateway, storage, ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
+const app = createApp({ gateway, storage, log: (l) => console.log(l), ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 if (adminEmail && adminPassword && (await app.auth.bootstrapAdmin(adminEmail, adminPassword))) {
@@ -40,3 +40,7 @@ const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS); //
 createHttpServer(app, allowedOrigins.length ? { cors: { allowedOrigins } } : {}).listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`unbound-core DEV server on http://127.0.0.1:${port} (${gatewayUrl ? 'stellar gateway ' + gatewayUrl : 'FakeStellarGateway'}, ${dbPath ? `SQLite ${dbPath}` : 'in-memory storage'})`);
 });
+if (process.env.JOBS_ENABLED !== 'false') {
+  app.jobs.start();
+  console.log(`maintenance jobs: ${app.jobs.status().map((j) => j.name).join(', ')}`);
+}

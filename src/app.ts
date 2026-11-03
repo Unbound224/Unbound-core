@@ -12,9 +12,11 @@ import { PortfolioService } from './modules/portfolio/service.js';
 import { AuthService } from './modules/auth/service.js';
 import type { Actor } from './common/auth.js';
 import { WalletService } from './modules/wallets/service.js';
+import { JobRunner, type Scheduler } from './jobs/runner.js';
+import { defaultJobs } from './jobs/default-jobs.js';
 
 /** Composition root. All persistence is in-memory (see README status). */
-export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage; escrowWindowSecs?: number }) {
+export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage; escrowWindowSecs?: number; scheduler?: Scheduler; log?: (line: string) => void }) {
   const clock = opts.clock ?? systemClock;
   const storage = opts.storage ?? new InMemoryStorage();
   const audit = new AuditLog(clock, storage.repo('audit_events'));
@@ -28,6 +30,9 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
   const redemption = new RedemptionService({ ...common, ...(opts.escrowWindowSecs ? { escrowWindowSecs: opts.escrowWindowSecs } : {}) });
   const reconciliation = new ReconciliationService({ clock, audit, guard, storage });
   const disputes = new DisputeService({ clock, audit, exchange, redemption, storage });
+  /** registered but NOT started; main.ts starts it (tests drive it directly) */
+  const jobs = new JobRunner({ clock, ...(opts.scheduler ? { scheduler: opts.scheduler } : {}), ...(opts.log ? { log: opts.log } : {}) });
+  for (const j of defaultJobs({ exchange, disputes, redemption })) jobs.register(j);
   reconciliation.register((o, r) => exchange.onObservation(o, r));
   reconciliation.register((o, r) => redemption.onObservation(o, r));
   /** Resolves a bearer token to an actor; merchant accounts get their CURRENT merchantId (never stale). */
@@ -37,7 +42,7 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
     const mine = (await issuers.merchants.find((m) => m.ownerActorId === actor.id && m.status !== 'REJECTED'))[0];
     return mine ? { ...actor, merchantId: mine.id } : actor;
   }
-  return { disputes, portfolio, authenticate, auth, storage, clock, audit, guard, wallets, issuers, exchange, redemption, reconciliation };
+  return { jobs, disputes, portfolio, authenticate, auth, storage, clock, audit, guard, wallets, issuers, exchange, redemption, reconciliation };
 }
 
 export type App = ReturnType<typeof createApp>;

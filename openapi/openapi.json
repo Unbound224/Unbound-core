@@ -847,6 +847,56 @@
         }
       }
     },
+    "/v1/admin/jobs": {
+      "get": {
+        "summary": "Admin: status of the scheduled maintenance jobs (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/jobs/{name}/run": {
+      "post": {
+        "summary": "Admin: run a maintenance job now (never overlaps a running one) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/ledger-events": {
       "post": {
         "summary": "Ingest a reconciliation event from unbound-stellar (additive; not in the initial SRD list)",

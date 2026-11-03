@@ -204,6 +204,25 @@ const routes: Route[] = [
     handler: async (c) => ok(await c.app.issuers.verifyMerchant(c.actor, c.params[0]!, str(asObj(c.body), 'evidenceRef'), c.requestId)),
   },
   {
+    method: 'GET',
+    pattern: /^\/v1\/admin\/jobs$/,
+    handler: async (c) => {
+      requireRole(c.actor, 'admin');
+      return ok({ jobs: c.app.jobs.status() });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/jobs\/([a-z0-9-]+)\/run$/,
+    handler: async (c) => {
+      const admin = requireRole(c.actor, 'admin');
+      if (!c.app.jobs.has(c.params[0]!)) throw new ApiError('NOT_FOUND', 'unknown job');
+      const s = await c.app.jobs.runNow(c.params[0]!);
+      await c.app.audit.record(admin, 'jobs', 'JOB_RUN_REQUESTED', s.name, c.requestId);
+      return ok(s);
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/v1\/admin\/ledger-events$/,
     handler: async (c) => {

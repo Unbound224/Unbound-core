@@ -4,6 +4,7 @@ import type { App } from '../app.js';
 import type { Actor } from '../common/auth.js';
 import { ApiError } from '../common/errors.js';
 import { requireRole } from '../common/auth.js';
+import { allowOrigin, CORS_ALLOWED_HEADERS, CORS_ALLOWED_METHODS, CORS_MAX_AGE_SECS, type CorsPolicy } from './cors.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -265,17 +266,37 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-export function createHttpServer(app: App): Server {
-  return createServer((req, res) => void handle(app, req, res));
+export interface HttpServerOptions {
+  /** CORS for browser clients; omitted = no CORS headers (same-origin only). */
+  cors?: CorsPolicy;
 }
 
-async function handle(app: App, req: IncomingMessage, res: ServerResponse): Promise<void> {
+export function createHttpServer(app: App, opts: HttpServerOptions = {}): Server {
+  return createServer((req, res) => void handle(app, req, res, opts));
+}
+
+async function handle(app: App, req: IncomingMessage, res: ServerResponse, opts: HttpServerOptions): Promise<void> {
   const inbound = req.headers['x-request-id'];
   const requestId = typeof inbound === 'string' && /^[\w.-]{1,64}$/.test(inbound) ? inbound : `req_${randomUUID().replaceAll('-', '')}`;
+  const allowed = allowOrigin(opts.cors, typeof req.headers.origin === 'string' ? req.headers.origin : undefined);
+  const cors: Record<string, string> = opts.cors
+    ? { vary: 'Origin', ...(allowed ? { 'access-control-allow-origin': allowed, 'access-control-expose-headers': 'x-request-id' } : {}) }
+    : {};
   const send = (status: number, body: unknown) => {
-    res.writeHead(status, { 'content-type': 'application/json', 'x-request-id': requestId, 'cache-control': 'no-store' });
+    res.writeHead(status, { 'content-type': 'application/json', 'x-request-id': requestId, 'cache-control': 'no-store', ...cors });
     res.end(JSON.stringify(body));
   };
+  if (req.method === 'OPTIONS') {
+    if (!allowed) return send(403, { error: { code: 'FORBIDDEN', message: 'origin not allowed', requestId } });
+    res.writeHead(204, {
+      ...cors,
+      'access-control-allow-methods': CORS_ALLOWED_METHODS,
+      'access-control-allow-headers': CORS_ALLOWED_HEADERS,
+      'access-control-max-age': String(CORS_MAX_AGE_SECS),
+      'x-request-id': requestId,
+    });
+    return void res.end();
+  }
   try {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/healthz') return send(200, { status: 'ok', paused: await app.guard.isPaused() });

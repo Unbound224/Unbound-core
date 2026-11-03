@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import { createHttpServer } from './http/server.js';
+import { parseAllowedOrigins } from './http/cors.js';
 import { InMemoryStorage, SqliteStorage } from './persistence/storage.js';
 import { HttpStellarGateway } from './integrations/stellar-http-gateway.js';
 import { FakeStellarGateway } from './testing/fake-gateway.js';
@@ -35,6 +36,7 @@ if (adminEmail && adminPassword && (await app.auth.bootstrapAdmin(adminEmail, ad
   console.log(`bootstrap admin created for ${adminEmail}`);
 }
 const port = Number(process.env.PORT ?? 3001);
-createHttpServer(app).listen(port, process.env.HOST ?? '127.0.0.1', () => {
+const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS); // throws on a malformed list
+createHttpServer(app, allowedOrigins.length ? { cors: { allowedOrigins } } : {}).listen(port, process.env.HOST ?? '127.0.0.1', () => {
   console.log(`unbound-core DEV server on http://127.0.0.1:${port} (${gatewayUrl ? 'stellar gateway ' + gatewayUrl : 'FakeStellarGateway'}, ${dbPath ? `SQLite ${dbPath}` : 'in-memory storage'})`);
 });

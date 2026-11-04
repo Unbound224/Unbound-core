@@ -128,7 +128,7 @@ describe('HTTP v1 (in-process server, FakeStellarGateway)', () => {
   });
 
   it('checked-in OpenAPI document matches the code (regenerate with npm run openapi)', () => {
-    expect(readFileSync(new URL('../openapi/openapi.json', import.meta.url), 'utf8')).toBe(openApiJson());
+    expect(readFileSync(new URL('../openapi/openapi.json', import.meta.url), 'utf8').replace(/\r\n/g, '\n')).toBe(openApiJson());
   });
 });
 

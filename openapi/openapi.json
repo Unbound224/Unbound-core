@@ -912,6 +912,31 @@
         }
       }
     },
+    "/v1/admin/targets": {
+      "post": {
+        "summary": "Admin adds a supported swap target asset (code + issuer) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/merchants/{id}/verify": {
       "post": {
         "summary": "Admin verifies a merchant with an evidence reference (additive; not in the initial SRD list)",

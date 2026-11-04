@@ -133,6 +133,17 @@ describe('HTTP v1 (in-process server, FakeStellarGateway)', () => {
 });
 
 describe('GET /v1/targets', () => {
+  it('admin adds a swap target over HTTP; others and malformed assets are refused', async () => {
+    const { w, call } = await boot();
+    const adminToken = await w.app.wallets.mintDevSession(w.admin);
+    const user = await w.newUser();
+    const asset = { code: 'USDC', issuer: w.USDC.issuer };
+    expect((await call('POST', '/v1/admin/targets', { token: user.token, body: asset })).status).toBe(403);
+    expect((await call('POST', '/v1/admin/targets', { token: adminToken, body: { code: 'USDC', issuer: 'nope' } })).status).toBe(400);
+    expect((await call('POST', '/v1/admin/targets', { token: adminToken, body: asset })).status).toBe(201);
+    expect((await call('GET', '/v1/targets')).json.targets).toEqual([asset]);
+  });
+
   it('lists admin-curated swap targets publicly and nothing else', async () => {
     const { w, call } = await boot();
     expect((await call('GET', '/v1/targets')).json.targets).toEqual([]);

@@ -86,6 +86,7 @@ export function buildOpenApi() {
       '/v1/merchants/me/assets': { post: op({ summary: 'Register a credit program with a signed redemption policy', status: '201', extra: true }) },
       '/v1/admin/merchants': { get: op({ summary: 'Admin review queue: every merchant and its status', extra: true }) },
       '/v1/admin/merchants/{id}/revoke': { post: op({ summary: 'Admin revokes a merchant with a reason; every program is suspended immediately', extra: true }) },
+      '/v1/admin/targets': { post: op({ summary: 'Admin adds a supported swap target asset (code + issuer)', status: '201', extra: true }) },
       '/v1/admin/merchants/{id}/verify': { post: op({ summary: 'Admin verifies a merchant with an evidence reference', extra: true }) },
       '/v1/admin/jobs': { get: op({ summary: 'Admin: status of the scheduled maintenance jobs', extra: true }) },
       '/v1/admin/jobs/{name}/run': { post: op({ summary: 'Admin: run a maintenance job now (never overlaps a running one)', extra: true }) },

@@ -215,6 +215,18 @@ const routes: Route[] = [
   },
   {
     method: 'POST',
+    pattern: /^\/v1\/admin\/targets$/,
+    handler: async (c) => {
+      const b = asObj(c.body);
+      const code = str(b, 'code');
+      const issuer = str(b, 'issuer');
+      if (!/^[A-Za-z0-9]{1,12}$/.test(code) || !/^G[A-Z2-7]{55}$/.test(issuer)) throw new ApiError('VALIDATION_FAILED', 'code must be 1-12 alphanumerics and issuer a Stellar public key');
+      await c.app.issuers.addSupportedTarget(c.actor, { code, issuer }, c.requestId);
+      return ok({ code, issuer }, 201);
+    },
+  },
+  {
+    method: 'POST',
     pattern: /^\/v1\/admin\/merchants\/([\w-]+)\/verify$/,
     handler: async (c) => ok(await c.app.issuers.verifyMerchant(c.actor, c.params[0]!, str(asObj(c.body), 'evidenceRef'), c.requestId)),
   },

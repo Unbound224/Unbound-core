@@ -95,16 +95,17 @@ Legend: **Built** = implemented and covered by automated tests in this repo. **N
 | Exchange quote -> intent -> submit state machine (idempotency, write-ahead submit, RECONCILING on unknown outcome) | Built, incl. concurrent duplicates |
 | Reconciliation consumer (contract v1.0, fail-closed, dedupe; discrepancies pause sensitive actions) | Built |
 | Redemptions (confirm only after ledger-confirmed return; rejection flags a refund) and disputes | Built |
-| Escrowed redemptions through the Soroban escrow (via `StellarGateway.escrow`): issuer-signed confirm/reject, holder timeout refund, `EXPIRED` state, `reconcileEscrows`; native return as fallback (ADR 0002) | Built on the labeled `FakeEscrow`; cross-repo tested against the real gateway building real Soroban XDR; never run against a deployed contract |
+| Escrowed redemptions through the Soroban escrow (via `StellarGateway.escrow`): issuer-signed confirm/reject, holder timeout refund, `EXPIRED` state, `reconcileEscrows`; native return as fallback (ADR 0002) | Built; run end to end on Stellar Testnet against the deployed escrow (confirm, reject, holder timeout refund; hashes in `Unbound-stellar/docs/DEPLOYMENT.md`); `FakeEscrow` remains the test adapter |
 | CORS (`CORS_ALLOWED_ORIGINS`, exact origins, no credentials) | Built |
-| Scheduled maintenance jobs (stuck intents, overdue disputes, escrow reconciliation) with backoff and admin status / run-now | Built (single process; no distributed lock) |
-| Password reset (single-use hashed tokens, 30 min, throttled, ends sessions) | Built; email goes through a `Mailer` port with only the dev `OutboxMailer` (prints, never sends) |
+| Scheduled maintenance jobs (stuck intents, overdue disputes, escrow reconciliation) with backoff and admin status / run-now | Built; with `SqliteJobLock` several processes sharing one SQLite file keep each job single-flight (lease table, expiry on crash) |
+| Password reset (single-use hashed tokens, 30 min, throttled, ends sessions) | Built; email goes through a `Mailer` port: dev `OutboxMailer` (prints) by default, `ResendMailer` when `MAIL_PROVIDER=resend` (mocked-fetch tested only; never sent through the live provider) |
 | Admin merchant review queue and revoke endpoints | Built |
 | `GET /v1/portfolio` classification; OpenAPI 3.1 snapshot; audit trail | Built |
 | `HttpStellarGateway` + cross-repo tests against a real `Unbound-stellar` gateway on its simulator | Built (runs when the sibling checkout exists) |
 | Docker / docker-compose | Written; only syntax-checked, never run |
-| PostgreSQL, queues, distributed job lock, rate limiting beyond login lockout, real email provider, email verification, MFA | Not yet |
-| Live Stellar Testnet run, production deployment, external audit | Not yet |
+| Admin TOTP MFA (RFC 6238; enrol / activate / disable, replay-safe, lockout, secrets sealed with `MFA_ENCRYPTION_KEY`) and `POST /v1/admin/targets` | Built and unit tested; not used in a live browser session |
+| Live Testnet: escrow redemption flows, DEX exchange SHOP->USDC (quote, intent, signed settlement, confirmed), gateway worker against Horizon | Run 2026-11-04 (see `Unbound-stellar/docs/DEPLOYMENT.md`) |
+| PostgreSQL, queues, rate limiting beyond login lockout, email verification, production deployment, external audit | Not yet |
 
 ## Contracts
 

@@ -10,6 +10,7 @@ import { KeyedMutex } from '../../common/repository.js';
 import type { Storage } from '../../persistence/storage.js';
 import type { WalletService } from '../wallets/service.js';
 import type { Mailer } from '../../common/mailer.js';
+import { base32Decode, base32Encode, newTotpSecret, openSecret, otpauthUri, sealSecret, verifyTotp } from '../../common/totp.js';
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
@@ -21,6 +22,8 @@ export interface Account {
   passwordHash: string;
   disabled: boolean;
   createdAt: string;
+  /** TOTP second factor (admin accounts). `secret` is AES-GCM sealed when MFA_ENCRYPTION_KEY is set, else base32 (dev only). */
+  mfa?: { secret: string; enabled: boolean; lastStep: number };
 }
 
 interface LoginState {
@@ -52,6 +55,8 @@ const Credentials = z
     password: z.string().min(12, 'password must be at least 12 characters').max(200),
   })
   .strict();
+
+const LoginInput = Credentials.extend({ code: z.string().trim().regex(/^[0-9]{6}$/u, 'the one-time code is 6 digits').optional() }).strict();
 
 async function hashPassword(pw: string): Promise<string> {
   const salt = randomBytes(16);
@@ -87,6 +92,8 @@ export class AuthService {
     private readonly wallets: WalletService,
     storage: Storage,
     private readonly mail?: { mailer: Mailer; resetUrl: string },
+    /** 32-byte key sealing TOTP secrets at rest; without it they are stored unsealed (dev only). */
+    private readonly mfaKey?: Buffer,
   ) {
     this.accounts = storage.repo<Account>('accounts');
     this.logins = storage.repo<LoginState>('login_state');
@@ -172,16 +179,25 @@ export class AuthService {
   }
 
   async login(input: unknown, requestId: string): Promise<{ token: string; role: Role; accountId: string }> {
-    const parsed = Credentials.safeParse(input);
+    const parsed = LoginInput.safeParse(input);
     if (!parsed.success) throw new ApiError('UNAUTHENTICATED', 'invalid credentials');
-    const { email, password } = parsed.data;
+    const { email, password, code } = parsed.data;
     return this.lock.run(`login:${email}`, async () => {
       const now = this.clock.now().getTime();
       const state = (await this.logins.get(email)) ?? { id: email, failures: 0, lockedUntil: 0 };
       if (state.lockedUntil > now) throw new ApiError('UNAUTHENTICATED', 'too many attempts; try again later');
       const account = (await this.accounts.find((a) => a.email === email))[0];
       const ok = await verifyPassword(password, account?.passwordHash ?? DUMMY_HASH);
-      if (!account || account.disabled || !ok) {
+      // Second factor: only after the password is right. A missing code is a prompt, not a failed attempt; a wrong,
+      // replayed or stale code counts toward the lockout like a wrong password.
+      let mfaStep: number | null = null;
+      if (account && !account.disabled && ok && account.mfa?.enabled) {
+        if (!code) throw new ApiError('MFA_REQUIRED', 'a one-time code from your authenticator app is required');
+        const step = verifyTotp(this.mfaSecret(account.mfa.secret), code, now);
+        if (step !== null && step > account.mfa.lastStep) mfaStep = step;
+      }
+      const good = !!account && !account.disabled && ok && (!account.mfa?.enabled || mfaStep !== null);
+      if (!good) {
         state.failures += 1;
         if (state.failures >= MAX_FAILURES) {
           state.lockedUntil = now + LOCK_MS;
@@ -192,10 +208,62 @@ export class AuthService {
         throw new ApiError('UNAUTHENTICATED', 'invalid credentials');
       }
       await this.logins.put({ id: email, failures: 0, lockedUntil: 0 });
+      if (mfaStep !== null && account.mfa) await this.accounts.put({ ...account, mfa: { ...account.mfa, lastStep: mfaStep } });
       const actor: Actor = { id: account.id, role: account.role };
       const token = await this.wallets.openSession(actor);
       await this.audit.record(actor, 'auth', 'LOGIN_OK', account.id, requestId);
       return { token, role: account.role, accountId: account.id };
+    });
+  }
+
+  private mfaSecret(stored: string): Buffer {
+    return base32Decode(this.mfaKey ? openSecret(stored, this.mfaKey) : stored);
+  }
+
+  /** Admin: start enrolling an authenticator app. The factor is NOT required at login until it is activated with a valid code. */
+  async enrollMfa(actor: Actor | undefined, requestId: string): Promise<{ secret: string; otpauthUri: string }> {
+    const admin = requireRole(actor, 'admin');
+    return this.lock.run(`mfa:${admin.id}`, async () => {
+      const a = await this.accounts.get(admin.id);
+      if (!a) throw new ApiError('NOT_FOUND', 'account not found');
+      if (a.mfa?.enabled) throw new ApiError('INVALID_STATE', 'MFA is already enabled; disable it with a valid code first');
+      const secret = base32Encode(newTotpSecret());
+      await this.accounts.put({ ...a, mfa: { secret: this.mfaKey ? sealSecret(secret, this.mfaKey) : secret, enabled: false, lastStep: 0 } });
+      await this.audit.record(admin, 'auth', 'MFA_ENROLL_STARTED', a.id, requestId);
+      return { secret, otpauthUri: otpauthUri('Unbound', a.email, secret) };
+    });
+  }
+
+  async activateMfa(actor: Actor | undefined, input: unknown, requestId: string): Promise<{ enabled: true }> {
+    const admin = requireRole(actor, 'admin');
+    const code = z.object({ code: z.string().regex(/^[0-9]{6}$/u) }).strict().safeParse(input);
+    if (!code.success) throw new ApiError('VALIDATION_FAILED', 'a 6 digit code from your authenticator app is required');
+    return this.lock.run(`mfa:${admin.id}`, async () => {
+      const a = await this.accounts.get(admin.id);
+      if (!a?.mfa || a.mfa.enabled) throw new ApiError('INVALID_STATE', 'start enrolment first (no pending authenticator)');
+      const step = verifyTotp(this.mfaSecret(a.mfa.secret), code.data.code, this.clock.now().getTime());
+      if (step === null) throw new ApiError('UNAUTHENTICATED', 'that code is not valid; check the time on your device and try again');
+      await this.accounts.put({ ...a, mfa: { ...a.mfa, enabled: true, lastStep: step } });
+      await this.audit.record(admin, 'auth', 'MFA_ENABLED', a.id, requestId);
+      return { enabled: true };
+    });
+  }
+
+  /** Turning MFA off needs a currently valid code, so a stolen session alone cannot remove the second factor. */
+  async disableMfa(actor: Actor | undefined, input: unknown, requestId: string): Promise<{ enabled: false }> {
+    const admin = requireRole(actor, 'admin');
+    const code = z.object({ code: z.string().regex(/^[0-9]{6}$/u) }).strict().safeParse(input);
+    if (!code.success) throw new ApiError('VALIDATION_FAILED', 'a 6 digit code from your authenticator app is required');
+    return this.lock.run(`mfa:${admin.id}`, async () => {
+      const a = await this.accounts.get(admin.id);
+      if (!a?.mfa?.enabled) throw new ApiError('INVALID_STATE', 'MFA is not enabled');
+      const step = verifyTotp(this.mfaSecret(a.mfa.secret), code.data.code, this.clock.now().getTime());
+      if (step === null || step <= a.mfa.lastStep) throw new ApiError('UNAUTHENTICATED', 'that code is not valid');
+      const { mfa: _drop, ...rest } = a;
+      void _drop;
+      await this.accounts.put(rest);
+      await this.audit.record(admin, 'auth', 'MFA_DISABLED', a.id, requestId);
+      return { enabled: false };
     });
   }
 

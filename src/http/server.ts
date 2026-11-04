@@ -166,6 +166,9 @@ const routes: Route[] = [
   { method: 'POST', pattern: /^\/v1\/auth\/password-reset$/, handler: async (c) => ok(await c.app.auth.requestPasswordReset(c.body, c.requestId), 202) },
   { method: 'POST', pattern: /^\/v1\/auth\/password-reset\/confirm$/, handler: async (c) => ok(await c.app.auth.confirmPasswordReset(c.body, c.requestId)) },
   { method: 'POST', pattern: /^\/v1\/auth\/login$/, handler: async (c) => ok(await c.app.auth.login(c.body, c.requestId)) },
+  { method: 'POST', pattern: /^\/v1\/auth\/mfa\/enroll$/, handler: async (c) => ok(await c.app.auth.enrollMfa(c.actor, c.requestId), 201) },
+  { method: 'POST', pattern: /^\/v1\/auth\/mfa\/activate$/, handler: async (c) => ok(await c.app.auth.activateMfa(c.actor, c.body, c.requestId)) },
+  { method: 'POST', pattern: /^\/v1\/auth\/mfa\/disable$/, handler: async (c) => ok(await c.app.auth.disableMfa(c.actor, c.body, c.requestId)) },
   {
     method: 'POST',
     pattern: /^\/v1\/auth\/logout$/,

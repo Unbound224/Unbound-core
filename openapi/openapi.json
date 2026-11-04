@@ -133,6 +133,81 @@
         }
       }
     },
+    "/v1/auth/mfa/enroll": {
+      "post": {
+        "summary": "Admin: start enrolling a TOTP authenticator (returns the secret and otpauth URI once) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/mfa/activate": {
+      "post": {
+        "summary": "Admin: activate MFA with a valid 6 digit code; login then requires `code` (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/mfa/disable": {
+      "post": {
+        "summary": "Admin: disable MFA (needs a currently valid code) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/login": {
       "post": {
         "summary": "Log in with email/password; returns a bearer token. Locks the account after repeated failures (additive; not in the initial SRD list)",

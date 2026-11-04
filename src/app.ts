@@ -13,18 +13,19 @@ import { AuthService } from './modules/auth/service.js';
 import type { Actor } from './common/auth.js';
 import { WalletService } from './modules/wallets/service.js';
 import { JobRunner, type Scheduler } from './jobs/runner.js';
+import type { JobLock } from './jobs/lock.js';
 import { defaultJobs } from './jobs/default-jobs.js';
 import type { Mailer } from './common/mailer.js';
 
 /** Composition root. All persistence is in-memory (see README status). */
-export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage; escrowWindowSecs?: number; scheduler?: Scheduler; log?: (line: string) => void; mail?: { mailer: Mailer; resetUrl: string } }) {
+export function createApp(opts: { gateway: StellarGateway; jobLock?: JobLock; mfaKey?: Buffer; clock?: Clock; storage?: Storage; escrowWindowSecs?: number; scheduler?: Scheduler; log?: (line: string) => void; mail?: { mailer: Mailer; resetUrl: string } }) {
   const clock = opts.clock ?? systemClock;
   const storage = opts.storage ?? new InMemoryStorage();
   const audit = new AuditLog(clock, storage.repo('audit_events'));
   const guard = new OperationsGuard(audit, storage);
   const wallets = new WalletService(clock, audit, storage);
   const issuers = new IssuerService(clock, audit, storage);
-  const auth = new AuthService(clock, audit, wallets, storage, opts.mail);
+  const auth = new AuthService(clock, audit, wallets, storage, opts.mail, opts.mfaKey);
   const common = { clock, audit, issuers, wallets, gateway: opts.gateway, guard, storage };
   const portfolio = new PortfolioService(common);
   const exchange = new ExchangeService(common);
@@ -32,7 +33,7 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
   const reconciliation = new ReconciliationService({ clock, audit, guard, storage });
   const disputes = new DisputeService({ clock, audit, exchange, redemption, storage });
   /** registered but NOT started; main.ts starts it (tests drive it directly) */
-  const jobs = new JobRunner({ clock, ...(opts.scheduler ? { scheduler: opts.scheduler } : {}), ...(opts.log ? { log: opts.log } : {}) });
+  const jobs = new JobRunner({ clock, ...(opts.jobLock ? { lock: opts.jobLock } : {}), ...(opts.scheduler ? { scheduler: opts.scheduler } : {}), ...(opts.log ? { log: opts.log } : {}) });
   for (const j of defaultJobs({ exchange, disputes, redemption })) jobs.register(j);
   // Core decides which issuers are trusted; a real gateway service must be fed that list or it refuses every asset.
   const syncable = opts.gateway as { syncTrustedAssets?: (assets: { code: string; issuer: string }[]) => Promise<void> };

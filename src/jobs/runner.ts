@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import type { Clock } from '../common/ids.js';
+import type { JobLock } from './lock.js';
 
 /**
  * In-process job runner for the periodic maintenance jobs (stuck-intent recovery, dispute
  * escalation, escrow reconciliation). Each job runs on its own interval, never overlaps itself,
  * backs off exponentially after failures (bounded), and exposes its status for admins.
  *
- * Single-process only: running several core instances would run each job once per instance. The
- * jobs are idempotent (they re-read state under the service locks), so that is safe but wasteful;
- * a distributed lock or queue is future work (README status).
+ * With a `JobLock` (a lease per job in the shared database) several core processes keep each job single-flight;
+ * without one, every instance runs every job, which is safe (the jobs are idempotent) but wasteful.
  */
 export interface Job {
   name: string;
@@ -62,7 +62,7 @@ export class JobRunner {
   private started = false;
 
   constructor(
-    private readonly opts: { clock: Clock; scheduler?: Scheduler; log?: (line: string) => void },
+    private readonly opts: { clock: Clock; scheduler?: Scheduler; log?: (line: string) => void; lock?: JobLock },
   ) {}
 
   register(job: Job): void {
@@ -139,6 +139,13 @@ export class JobRunner {
   private execute(e: Entry): Promise<JobStatus> {
     const run = (async () => {
       const s = e.status;
+      // With a lock, only the process holding the lease runs the job; a crashed holder's lease expires by itself.
+      const lock = this.opts.lock;
+      if (lock && !(await lock.acquire(e.job.name, Math.max(e.job.intervalMs * 2, 60_000)))) {
+        this.opts.log?.(`[jobs] ${e.job.name}: another process holds the lease; skipped`);
+        e.inFlight = undefined;
+        return { ...s };
+      }
       const started = this.opts.clock.now();
       s.running = true;
       s.lastStartedAt = started.toISOString();
@@ -160,6 +167,7 @@ export class JobRunner {
         e.nextEligibleMs = this.opts.clock.now().getTime() + backoff;
         this.opts.log?.(`[jobs] ${e.job.name} failed (${s.consecutiveFailures}x), backing off ${Math.round(backoff / 1000)}s: ${s.lastError}`);
       } finally {
+        await lock?.release(e.job.name);
         s.running = false;
         s.lastFinishedAt = this.opts.clock.now().toISOString();
         s.nextEligibleAt = e.nextEligibleMs ? new Date(e.nextEligibleMs).toISOString() : null;

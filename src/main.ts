@@ -2,6 +2,9 @@ import { createApp } from './app.js';
 import { createHttpServer } from './http/server.js';
 import { parseAllowedOrigins } from './http/cors.js';
 import { OutboxMailer } from './common/mailer.js';
+import { mailerFromEnv } from './integrations/resend-mailer.js';
+import { SqliteJobLock } from './jobs/lock.js';
+import { randomUUID } from 'node:crypto';
 import { InMemoryStorage, SqliteStorage } from './persistence/storage.js';
 import { HttpStellarGateway } from './integrations/stellar-http-gateway.js';
 import { FakeStellarGateway } from './testing/fake-gateway.js';
@@ -31,9 +34,16 @@ const gateway =
       })();
 const windowHours = Number(process.env.ESCROW_WINDOW_HOURS ?? 0);
 // DEV ONLY: no email provider exists yet; reset emails are printed here instead of being sent.
-const mailer = new OutboxMailer((m) => console.log(`[dev-mail, NOT SENT] to=${m.to} subject="${m.subject}"\n${m.text}`));
+const { mailer, real: realMail } = mailerFromEnv(process.env, new OutboxMailer((m) => console.log(`[dev-mail, NOT SENT] to=${m.to} subject="${m.subject}"\n${m.text}`)));
+if (realMail) console.log('email: real provider configured (MAIL_PROVIDER)');
 const resetUrl = process.env.PASSWORD_RESET_URL ?? 'http://localhost:3000/merchant/reset-password';
-const app = createApp({ gateway, storage, log: (l) => console.log(l), mail: { mailer, resetUrl }, ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
+// Several core processes may share one SQLite file: a lease per job keeps each job single-flight across them.
+const jobLock = storage instanceof SqliteStorage ? new SqliteJobLock(storage.db, `core-${process.pid}-${randomUUID().slice(0, 8)}`) : undefined;
+// TOTP secrets are sealed at rest with MFA_ENCRYPTION_KEY (64 hex chars = 32 bytes). Without it they are stored unsealed: dev only.
+const mfaKeyHex = process.env.MFA_ENCRYPTION_KEY;
+if (mfaKeyHex !== undefined && !/^[0-9a-fA-F]{64}$/u.test(mfaKeyHex)) throw new Error('MFA_ENCRYPTION_KEY must be 64 hex characters (32 bytes)');
+const mfaKey = mfaKeyHex ? Buffer.from(mfaKeyHex, 'hex') : undefined;
+const app = createApp({ gateway, storage, ...(jobLock ? { jobLock } : {}), ...(mfaKey ? { mfaKey } : {}), log: (l) => console.log(l), mail: { mailer, resetUrl }, ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
 if (adminEmail && adminPassword && (await app.auth.bootstrapAdmin(adminEmail, adminPassword))) {

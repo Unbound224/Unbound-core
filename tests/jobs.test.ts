@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHttpServer } from '../src/http/server.js';
 import { JobRunner, MAX_BACKOFF_MS, type Scheduler } from '../src/jobs/runner.js';
 import { DEFAULT_ESCROW_WINDOW_SECS } from '../src/modules/redemption/service.js';
 import { makeWorld } from './helpers.js';
+import { FakeStellarGateway } from '../src/testing/fake-gateway.js';
 
 function fakeScheduler() {
   const timers: { fn: () => void; ms: number; cleared: boolean }[] = [];
@@ -105,6 +106,22 @@ describe('default maintenance jobs (wired in createApp)', () => {
   it('registers recover-stuck-intents, escalate-overdue-disputes and reconcile-escrows', () => {
     const w = makeWorld();
     expect(w.app.jobs.status().map((j) => j.name)).toEqual(['recover-stuck-intents', 'escalate-overdue-disputes', 'reconcile-escrows']);
+  });
+
+  it('sync-trusted-assets is registered only for a gateway that can take the list, and pushes the trusted issuers of core', async () => {
+    expect(makeWorld().app.jobs.status().map((j) => j.name)).not.toContain('sync-trusted-assets');
+    const spy = vi.fn().mockResolvedValue(undefined);
+    const proto = FakeStellarGateway.prototype as unknown as { syncTrustedAssets?: unknown };
+    proto.syncTrustedAssets = spy;
+    try {
+      const w = makeWorld();
+      expect(w.app.jobs.status().map((j) => j.name)).toContain('sync-trusted-assets');
+      await w.onboardMerchant();
+      await w.app.jobs.runNow('sync-trusted-assets');
+      expect(spy).toHaveBeenCalledWith(expect.arrayContaining([{ code: 'SHOP', issuer: w.issuerKp.publicKey() }]));
+    } finally {
+      delete proto.syncTrustedAssets;
+    }
   });
 
   it('recover-stuck-intents moves a crash-stuck SUBMITTED intent to RECONCILING', async () => {

@@ -34,6 +34,11 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
   /** registered but NOT started; main.ts starts it (tests drive it directly) */
   const jobs = new JobRunner({ clock, ...(opts.scheduler ? { scheduler: opts.scheduler } : {}), ...(opts.log ? { log: opts.log } : {}) });
   for (const j of defaultJobs({ exchange, disputes, redemption })) jobs.register(j);
+  // Core decides which issuers are trusted; a real gateway service must be fed that list or it refuses every asset.
+  const syncable = opts.gateway as { syncTrustedAssets?: (assets: { code: string; issuer: string }[]) => Promise<void> };
+  if (typeof syncable.syncTrustedAssets === 'function') {
+    jobs.register({ name: 'sync-trusted-assets', intervalMs: 30_000, run: async () => { await syncable.syncTrustedAssets!(((await issuers.trustedAssets()) as { code: string; issuer: string }[])); } });
+  }
   reconciliation.register((o, r) => exchange.onObservation(o, r));
   reconciliation.register((o, r) => redemption.onObservation(o, r));
   /** Resolves a bearer token to an actor; merchant accounts get their CURRENT merchantId (never stale). */

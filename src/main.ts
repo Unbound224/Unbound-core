@@ -47,4 +47,6 @@ createHttpServer(app, allowedOrigins.length ? { cors: { allowedOrigins } } : {})
 if (process.env.JOBS_ENABLED !== 'false') {
   app.jobs.start();
   console.log(`maintenance jobs: ${app.jobs.status().map((j) => j.name).join(', ')}`);
+  // push the trusted-asset list to the gateway right away instead of waiting for the first interval
+  if (app.jobs.status().some((j) => j.name === 'sync-trusted-assets')) await app.jobs.runNow('sync-trusted-assets');
 }

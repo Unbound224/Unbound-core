@@ -46,8 +46,14 @@ const mfaKey = mfaKeyHex ? Buffer.from(mfaKeyHex, 'hex') : undefined;
 const app = createApp({ gateway, storage, ...(jobLock ? { jobLock } : {}), ...(mfaKey ? { mfaKey } : {}), log: (l) => console.log(l), mail: { mailer, resetUrl }, ...(windowHours >= 1 && windowHours <= 720 ? { escrowWindowSecs: Math.floor(windowHours * 3600) } : {}) });
 const adminEmail = process.env.BOOTSTRAP_ADMIN_EMAIL;
 const adminPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
-if (adminEmail && adminPassword && (await app.auth.bootstrapAdmin(adminEmail, adminPassword))) {
-  console.log(`bootstrap admin created for ${adminEmail}`);
+if (adminEmail && adminPassword) {
+  try {
+    if (await app.auth.bootstrapAdmin(adminEmail, adminPassword)) console.log(`bootstrap admin created for ${adminEmail}`);
+  } catch (e) {
+    // Say what is wrong without ever printing the secret: only lengths and whether there is stray whitespace.
+    console.error(`BOOTSTRAP_ADMIN_* rejected: password has ${adminPassword.length} characters (needs 12 to 200; leading/trailing whitespace: ${adminPassword !== adminPassword.trim()}); email has ${adminEmail.length} characters (leading/trailing whitespace: ${adminEmail !== adminEmail.trim()}). Fix the environment variables and redeploy.`);
+    throw e;
+  }
 }
 const port = Number(process.env.PORT ?? 3001);
 const allowedOrigins = parseAllowedOrigins(process.env.CORS_ALLOWED_ORIGINS); // throws on a malformed list

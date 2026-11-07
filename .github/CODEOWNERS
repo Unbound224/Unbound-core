@@ -1,0 +1,3 @@
+/.github/CODEOWNERS @Cjay-Cyber-2
+/.github/workflows/pr-security.yml @Cjay-Cyber-2
+/.github/workflows/codeql.yml @Cjay-Cyber-2

@@ -136,7 +136,6 @@ Unaudited, Testnet only. Never use real funds or Mainnet keys with this code. Re
 ## Community
 
 Questions and ideas: [GitHub Discussions](https://github.com/Unbound224/Unbound-core/discussions).
-<!-- TODO(owner): add the Telegram or Discord invite link here once it exists. -->
 
 ## Maintainers
 

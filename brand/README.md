@@ -17,7 +17,7 @@ The logo in `icon.svg` and `mark.svg` has been **approved as a design direction*
 Two distinct interlocking forms surround a shared opening, with a detached square representing value no longer trapped in one system.
 
 ### Restrictions
-No gradients, 3D, bevel, shadows, extraneous text, or arbitrary redesign of the approved mark. UI/UX remains adaptable for the coding agent and may evolve. The mark is not trademark-cleared; complete an originality/brand review before commercial use.
+No gradients, 3D, bevel, shadows, extraneous text, or arbitrary redesign of the approved mark. UI and UX remain adaptable and may evolve. The mark is not trademark-cleared; complete an originality/brand review before commercial use.
 
 ### GitHub organization avatar
 Organization owner should go to **Organization Settings → Profile → Update avatar** and upload `org-avatar.png`. The GitHub connector in Chat mode cannot edit organization profile images.

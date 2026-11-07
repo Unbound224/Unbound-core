@@ -7,8 +7,8 @@ body:
     attributes:
       value: |
         Features must fit this repository's boundary (see `docs/ARCHITECTURE.md`) and Unbound's safety rules: only
-        issuer-authorized credit, no promised liquidity or fiat cash-out, Testnet only. Scoped contributor ideas live in
-        `docs/CONTRIBUTOR_ISSUES.md`.
+        issuer-authorized credit, no promised liquidity or fiat cash-out, Testnet only. Scoped contributor work is tracked in
+        the issues labelled `Stellar Wave`.
   - type: dropdown
     id: area
     attributes:

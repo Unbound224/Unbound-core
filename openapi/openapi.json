@@ -133,9 +133,124 @@
         }
       }
     },
+    "/v1/auth/mfa/enroll": {
+      "post": {
+        "summary": "Admin: start enrolling a TOTP authenticator (returns the secret and otpauth URI once) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/mfa/activate": {
+      "post": {
+        "summary": "Admin: activate MFA with a valid 6 digit code; login then requires `code` (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/mfa/disable": {
+      "post": {
+        "summary": "Admin: disable MFA (needs a currently valid code) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/login": {
       "post": {
         "summary": "Log in with email/password; returns a bearer token. Locks the account after repeated failures (additive; not in the initial SRD list)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/password-reset": {
+      "post": {
+        "summary": "Request a password-reset email. Always 202, whether or not the account exists. At most 3 per account per hour (additive; not in the initial SRD list)",
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/password-reset/confirm": {
+      "post": {
+        "summary": "Set a new password with the single-use token from the email (valid 30 minutes). Ends all sessions of the account (additive; not in the initial SRD list)",
         "responses": {
           "200": {
             "description": "OK"
@@ -674,7 +789,7 @@
     },
     "/v1/merchants/me/redemptions/{id}/confirm": {
       "post": {
-        "summary": "Merchant confirms fulfilment after the return is ledger-confirmed",
+        "summary": "Merchant confirms fulfilment after the return is ledger-confirmed. NATIVE: 200 FULFILLED. ESCROW: 202 with escrow.pendingXdr (issuer-signed confirm invocation)",
         "security": [
           {
             "bearerAuth": []
@@ -682,6 +797,106 @@
         ],
         "responses": {
           "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/me/redemptions/{id}/reject": {
+      "post": {
+        "summary": "Merchant rejects with a reason. NATIVE: 200 REJECTED with refundDue. ESCROW: 202 with the issuer-signed reject (on-chain refund) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/merchants/me/redemptions/{id}/escrow/submit": {
+      "post": {
+        "summary": "Submit the issuer-signed escrow confirm/reject transaction (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/redemptions/{id}/refund": {
+      "post": {
+        "summary": "Holder requests the escrow timeout refund (after the deadline); returns escrow.pendingXdr to sign (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/redemptions/{id}/escrow/submit": {
+      "post": {
+        "summary": "Submit the holder-signed escrow timeout refund (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "202": {
             "description": "OK"
           },
           "default": {
@@ -722,9 +937,134 @@
         }
       }
     },
+    "/v1/admin/merchants": {
+      "get": {
+        "summary": "Admin review queue: every merchant and its status (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/merchants/{id}/revoke": {
+      "post": {
+        "summary": "Admin revokes a merchant with a reason; every program is suspended immediately (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/targets": {
+      "post": {
+        "summary": "Admin adds a supported swap target asset (code + issuer) (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/merchants/{id}/verify": {
       "post": {
         "summary": "Admin verifies a merchant with an evidence reference (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/jobs": {
+      "get": {
+        "summary": "Admin: status of the scheduled maintenance jobs (additive; not in the initial SRD list)",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/jobs/{name}/run": {
+      "post": {
+        "summary": "Admin: run a maintenance job now (never overlaps a running one) (additive; not in the initial SRD list)",
         "security": [
           {
             "bearerAuth": []

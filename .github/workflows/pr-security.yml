@@ -1,0 +1,32 @@
+name: PR security gate
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          fail-on-scopes: runtime, unknown
+  malware-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Reject executable, hidden, and obfuscated additions
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git diff --check "$BASE_SHA" "$HEAD_SHA"
+          added=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" | grep -Ei '\.(apk|bat|cmd|com|dll|dylib|exe|ipa|jar|msi|ps1|scr|so|vbs)$' || true); test -z "$added" || { echo "$added"; exit 1; }
+          git diff --unified=0 "$BASE_SHA" "$HEAD_SHA" -- ':!.github/workflows/pr-security.yml' | grep '^+' | grep -v '^+++' > added-lines.txt || true
+          ! grep -nP '[\x{202A}-\x{202E}\x{2066}-\x{2069}\x00-\x08\x0B\x0C\x0E-\x1F]' added-lines.txt
+          ! grep -nEi '(curl|wget)[^\n|]*\|[[:space:]]*(ba)?sh|invoke-expression|powershell[^\n]*-(enc|encodedcommand)|certutil[^\n]*(decode|urlcache)|frombase64string[[:space:]]*\(|base64[[:space:]]+(-d|--decode)|\beval[[:space:]]*\(|new[[:space:]]+function[[:space:]]*\(' added-lines.txt

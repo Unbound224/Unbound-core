@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -75,5 +75,13 @@ describe('SqliteStorage durability and migrations', () => {
     const vs = MIGRATIONS.map((m) => m.version);
     expect(vs).toEqual([...vs].sort((a, b) => a - b));
     expect(new Set(vs).size).toBe(vs.length);
+  });
+  it('creates a missing parent directory on first start (DATABASE_FILE=./data/dev.db)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'unbound-'));
+    dirs.push(root);
+    const s = new SqliteStorage(join(root, 'nested', 'data', 'dev.db'));
+    await s.repo<Doc>('docs').put({ id: 'a', n: 1 });
+    s.close();
+    expect(existsSync(join(root, 'nested', 'data', 'dev.db'))).toBe(true);
   });
 });

@@ -26,7 +26,11 @@ The mobile app does not own merchant verification, and the core API does not rei
 - Trustlines: consumer explicitly authorizes holding merchant-issued assets; issuer authorization flags respected.
 - Native offers/order books and strict-send/strict-receive path payments produce actual conversion/settlement.
 - Horizon/RPC reads and transaction history become verifiable ledger records; service indexer reconciles finality.
-- Soroban is not needed for the core MVP. Introduce it only if a capability demonstrably requires contract logic.
+- Soroban is used in exactly one place: the redemption-return escrow (`unbound-stellar/contracts/redemption-escrow`,
+  ADR 0002 in unbound-stellar). Returned credit is held by the contract until the issuer confirms (released to the
+  issuer), rejects (refunded) or the deadline passes (anyone can trigger the refund). Classic assets cannot express that
+  conditional custody without a custodian. Everything else stays classic Stellar; core falls back to the native return
+  payment whenever the escrow is unavailable.
 
 ## Service and package contracts
 - OpenAPI for network APIs; generated Dart/TypeScript clients; schema snapshots checked into CI.
@@ -38,7 +42,7 @@ The mobile app does not own merchant verification, and the core API does not rei
 ## Integration test order
 1. Each repository passes independent lint/build/unit tests.
 2. Publish local SDKs and generated interfaces.
-3. Run network local/sandbox or Testnet tests.
+3. Run local-network or Testnet tests.
 4. Run API/service orchestration tests with fake wallets and then test wallets.
 5. Run frontend/device E2E.
 6. Verify failure and recovery (network loss, duplicate event, stale authorization, partial settlement).

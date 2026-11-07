@@ -1,3 +1,5 @@
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { InMemoryRepository, type Repository } from '../common/repository.js';
 import { MIGRATIONS } from './migrations.js';
@@ -30,6 +32,8 @@ export class SqliteStorage implements Storage {
   readonly db: DatabaseSync;
 
   constructor(path: string) {
+    // A first start with DATABASE_FILE=./data/dev.db must not fail just because ./data does not exist yet.
+    if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.migrate();

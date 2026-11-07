@@ -11,7 +11,7 @@ become the basis of a system that moves value.
 | `main` | Yes (fixes land here) |
 | anything else | No |
 
-There are no tagged stable releases yet.
+The only release is the `v0.1.0` Testnet prototype; there is no stable release.
 
 ## Reporting a vulnerability
 

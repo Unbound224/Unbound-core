@@ -5,10 +5,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate scaffold metadata
+      - name: Required community and docs files exist
         run: |
-          test -s README.md
-          test -s AGENTS.md
-          test -s docs/PROJECT_MASTER.md
-          test -s docs/ARCHITECTURE.md
-          test -s brand/icon.svg
+          for f in README.md LICENSE CONTRIBUTING.md SECURITY.md CODE_OF_CONDUCT.md CHANGELOG.md docs/ARCHITECTURE.md brand/icon.svg; do
+            test -s "$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+      - name: Relative links in Markdown files resolve
+        run: |
+          node - <<'JS'
+          const fs = require('fs');
+          const path = require('path');
+          const files = ['README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CHANGELOG.md'];
+          for (const dir of ['docs', 'docs/adr', 'gitbook']) {
+            if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir)) if (f.endsWith('.md')) files.push(path.join(dir, f));
+          }
+          const bad = [];
+          for (const f of files) {
+            if (!fs.existsSync(f)) continue;
+            const text = fs.readFileSync(f, 'utf8').replace(/```[\s\S]*?```/g, '');
+            for (const m of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+              const target = m[1].split('#')[0];
+              if (!target || /^[a-z]+:/i.test(target) || target.startsWith('mailto:')) continue;
+              const resolved = path.normalize(path.join(path.dirname(f), target));
+              if (!fs.existsSync(resolved)) bad.push(`${f} -> ${m[1]}`);
+            }
+          }
+          if (bad.length) { console.error('Broken relative links:\n' + bad.join('\n')); process.exit(1); }
+          console.log(`checked ${files.length} Markdown files`);
+          JS

@@ -4,6 +4,7 @@ import type { App } from '../app.js';
 import type { Actor } from '../common/auth.js';
 import { ApiError } from '../common/errors.js';
 import { requireRole } from '../common/auth.js';
+import { allowOrigin, CORS_ALLOWED_HEADERS, CORS_ALLOWED_METHODS, CORS_MAX_AGE_SECS, type CorsPolicy } from './cors.js';
 
 const MAX_BODY = 64 * 1024;
 
@@ -112,30 +113,62 @@ const routes: Route[] = [
   {
     method: 'POST',
     pattern: /^\/v1\/redemptions$/,
-    handler: async (c) => ok(publicRedemption(await c.app.redemption.create(c.actor, c.body, c.idempotencyKey, c.requestId)), 201),
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.create(c.actor, c.body, c.idempotencyKey, c.requestId), c.app.clock.now()), 201),
   },
-  { method: 'GET', pattern: /^\/v1\/redemptions\/([\w-]+)$/, handler: async (c) => ok(publicRedemption(await c.app.redemption.get(c.actor, c.params[0]!))) },
+  { method: 'GET', pattern: /^\/v1\/redemptions\/([\w-]+)$/, handler: async (c) => ok(publicRedemption(await c.app.redemption.get(c.actor, c.params[0]!), c.app.clock.now())) },
   {
     method: 'POST',
     pattern: /^\/v1\/redemptions\/([\w-]+)\/return$/,
-    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitReturn(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId)), 202),
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitReturn(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId), c.app.clock.now()), 202),
   },
   {
     method: 'GET',
     pattern: /^\/v1\/merchants\/me\/redemptions$/,
-    handler: async (c) => ok({ redemptions: (await c.app.redemption.listForMerchant(c.actor)).map(publicRedemption) }),
+    handler: async (c) => ok({ redemptions: (await c.app.redemption.listForMerchant(c.actor)).map((r) => publicRedemption(r, c.app.clock.now())) }),
   },
   {
     method: 'POST',
     pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/confirm$/,
-    handler: async (c) => ok(publicRedemption(await c.app.redemption.merchantConfirm(c.actor, c.params[0]!, c.requestId))),
+    handler: async (c) => {
+      const r = await c.app.redemption.merchantConfirm(c.actor, c.params[0]!, c.requestId);
+      // escrow mode: 202 with the issuer transaction to sign; FULFILLED only after the ledger confirms it
+      return ok(publicRedemption(r, c.app.clock.now()), r.state === 'FULFILLED' ? 200 : 202);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/reject$/,
+    handler: async (c) => {
+      const r = await c.app.redemption.merchantReject(c.actor, c.params[0]!, str(asObj(c.body), 'reason'), c.requestId);
+      return ok(publicRedemption(r, c.app.clock.now()), r.state === 'REJECTED' ? 200 : 202);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/merchants\/me\/redemptions\/([\w-]+)\/escrow\/submit$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitEscrowAction(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId), c.app.clock.now()), 202),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/redemptions\/([\w-]+)\/refund$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.claimRefund(c.actor, c.params[0]!, c.requestId), c.app.clock.now()), 202),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/redemptions\/([\w-]+)\/escrow\/submit$/,
+    handler: async (c) => ok(publicRedemption(await c.app.redemption.submitEscrowAction(c.actor, c.params[0]!, str(asObj(c.body), 'signedXdr'), c.requestId), c.app.clock.now()), 202),
   },
   {
     method: 'POST',
     pattern: /^\/v1\/auth\/register$/,
     handler: async (c) => ok(await c.app.auth.registerMerchant(c.body, c.requestId), 201),
   },
+  { method: 'POST', pattern: /^\/v1\/auth\/password-reset$/, handler: async (c) => ok(await c.app.auth.requestPasswordReset(c.body, c.requestId), 202) },
+  { method: 'POST', pattern: /^\/v1\/auth\/password-reset\/confirm$/, handler: async (c) => ok(await c.app.auth.confirmPasswordReset(c.body, c.requestId)) },
   { method: 'POST', pattern: /^\/v1\/auth\/login$/, handler: async (c) => ok(await c.app.auth.login(c.body, c.requestId)) },
+  { method: 'POST', pattern: /^\/v1\/auth\/mfa\/enroll$/, handler: async (c) => ok(await c.app.auth.enrollMfa(c.actor, c.requestId), 201) },
+  { method: 'POST', pattern: /^\/v1\/auth\/mfa\/activate$/, handler: async (c) => ok(await c.app.auth.activateMfa(c.actor, c.body, c.requestId)) },
+  { method: 'POST', pattern: /^\/v1\/auth\/mfa\/disable$/, handler: async (c) => ok(await c.app.auth.disableMfa(c.actor, c.body, c.requestId)) },
   {
     method: 'POST',
     pattern: /^\/v1\/auth\/logout$/,
@@ -171,9 +204,53 @@ const routes: Route[] = [
     },
   },
   {
+    method: 'GET',
+    pattern: /^\/v1\/admin\/merchants$/,
+    handler: async (c) => ok({ merchants: (await c.app.issuers.listMerchants(c.actor)).map((m) => ({ id: m.id, legalName: m.legalName, jurisdiction: m.jurisdiction, contact: m.contact, status: m.status, createdAt: m.createdAt, updatedAt: m.updatedAt })) }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/merchants\/([\w-]+)\/revoke$/,
+    handler: async (c) => {
+      await c.app.issuers.revokeMerchant(c.actor, c.params[0]!, str(asObj(c.body), 'reason'), c.requestId);
+      return ok({ ok: true });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/targets$/,
+    handler: async (c) => {
+      const b = asObj(c.body);
+      const code = str(b, 'code');
+      const issuer = str(b, 'issuer');
+      if (!/^[A-Za-z0-9]{1,12}$/.test(code) || !/^G[A-Z2-7]{55}$/.test(issuer)) throw new ApiError('VALIDATION_FAILED', 'code must be 1-12 alphanumerics and issuer a Stellar public key');
+      await c.app.issuers.addSupportedTarget(c.actor, { code, issuer }, c.requestId);
+      return ok({ code, issuer }, 201);
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/v1\/admin\/merchants\/([\w-]+)\/verify$/,
     handler: async (c) => ok(await c.app.issuers.verifyMerchant(c.actor, c.params[0]!, str(asObj(c.body), 'evidenceRef'), c.requestId)),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/v1\/admin\/jobs$/,
+    handler: async (c) => {
+      requireRole(c.actor, 'admin');
+      return ok({ jobs: c.app.jobs.status() });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/v1\/admin\/jobs\/([a-z0-9-]+)\/run$/,
+    handler: async (c) => {
+      const admin = requireRole(c.actor, 'admin');
+      if (!c.app.jobs.has(c.params[0]!)) throw new ApiError('NOT_FOUND', 'unknown job');
+      const s = await c.app.jobs.runNow(c.params[0]!);
+      await c.app.audit.record(admin, 'jobs', 'JOB_RUN_REQUESTED', s.name, c.requestId);
+      return ok(s);
+    },
   },
   {
     method: 'POST',
@@ -190,7 +267,8 @@ function publicAsset(p: Awaited<ReturnType<App['issuers']['getAsset']>>) {
   return { id: p.id, assetCode: p.assetCode, issuer: p.issuerPublicKey, status: p.status, policy: p.policy };
 }
 
-function publicRedemption(r: Awaited<ReturnType<App['redemption']['get']>>) {
+function publicRedemption(r: Awaited<ReturnType<App['redemption']['get']>>, now: Date = new Date()) {
+  const e = r.escrow;
   return {
     id: r.id,
     state: r.state,
@@ -201,6 +279,20 @@ function publicRedemption(r: Awaited<ReturnType<App['redemption']['get']>>) {
     unsignedXdr: r.state === 'AWAITING_RETURN' ? (r.unsignedXdr ?? null) : null,
     refundDue: r.refundDue ?? false,
     rejectionReason: r.rejectionReason ?? null,
+    mode: r.mode ?? 'NATIVE',
+    escrow: e
+      ? {
+          contractId: e.contractId,
+          deadline: new Date(e.deadline * 1000).toISOString(),
+          state: e.state,
+          refundAvailable: e.state === 'HELD' && !e.pending && now.getTime() >= e.deadline * 1000,
+          pendingAction: e.pending?.action ?? null,
+          pendingXdr: e.pending?.xdr ?? null,
+          pendingTxHash: e.pending?.hash ?? null,
+          closeTxHash: e.closeTxHash ?? null,
+          lastFailure: e.lastFailure ?? null,
+        }
+      : null,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   };
@@ -223,17 +315,37 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-export function createHttpServer(app: App): Server {
-  return createServer((req, res) => void handle(app, req, res));
+export interface HttpServerOptions {
+  /** CORS for browser clients; omitted = no CORS headers (same-origin only). */
+  cors?: CorsPolicy;
 }
 
-async function handle(app: App, req: IncomingMessage, res: ServerResponse): Promise<void> {
+export function createHttpServer(app: App, opts: HttpServerOptions = {}): Server {
+  return createServer((req, res) => void handle(app, req, res, opts));
+}
+
+async function handle(app: App, req: IncomingMessage, res: ServerResponse, opts: HttpServerOptions): Promise<void> {
   const inbound = req.headers['x-request-id'];
   const requestId = typeof inbound === 'string' && /^[\w.-]{1,64}$/.test(inbound) ? inbound : `req_${randomUUID().replaceAll('-', '')}`;
+  const allowed = allowOrigin(opts.cors, typeof req.headers.origin === 'string' ? req.headers.origin : undefined);
+  const cors: Record<string, string> = opts.cors
+    ? { vary: 'Origin', ...(allowed ? { 'access-control-allow-origin': allowed, 'access-control-expose-headers': 'x-request-id' } : {}) }
+    : {};
   const send = (status: number, body: unknown) => {
-    res.writeHead(status, { 'content-type': 'application/json', 'x-request-id': requestId, 'cache-control': 'no-store' });
+    res.writeHead(status, { 'content-type': 'application/json', 'x-request-id': requestId, 'cache-control': 'no-store', ...cors });
     res.end(JSON.stringify(body));
   };
+  if (req.method === 'OPTIONS') {
+    if (!allowed) return send(403, { error: { code: 'FORBIDDEN', message: 'origin not allowed', requestId } });
+    res.writeHead(204, {
+      ...cors,
+      'access-control-allow-methods': CORS_ALLOWED_METHODS,
+      'access-control-allow-headers': CORS_ALLOWED_HEADERS,
+      'access-control-max-age': String(CORS_MAX_AGE_SECS),
+      'x-request-id': requestId,
+    });
+    return void res.end();
+  }
   try {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (req.method === 'GET' && url.pathname === '/healthz') return send(200, { status: 'ok', paused: await app.guard.isPaused() });

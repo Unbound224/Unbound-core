@@ -12,22 +12,34 @@ import { PortfolioService } from './modules/portfolio/service.js';
 import { AuthService } from './modules/auth/service.js';
 import type { Actor } from './common/auth.js';
 import { WalletService } from './modules/wallets/service.js';
+import { JobRunner, type Scheduler } from './jobs/runner.js';
+import type { JobLock } from './jobs/lock.js';
+import { defaultJobs } from './jobs/default-jobs.js';
+import type { Mailer } from './common/mailer.js';
 
 /** Composition root. All persistence is in-memory (see README status). */
-export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storage?: Storage }) {
+export function createApp(opts: { gateway: StellarGateway; jobLock?: JobLock; mfaKey?: Buffer; clock?: Clock; storage?: Storage; escrowWindowSecs?: number; scheduler?: Scheduler; log?: (line: string) => void; mail?: { mailer: Mailer; resetUrl: string } }) {
   const clock = opts.clock ?? systemClock;
   const storage = opts.storage ?? new InMemoryStorage();
   const audit = new AuditLog(clock, storage.repo('audit_events'));
   const guard = new OperationsGuard(audit, storage);
   const wallets = new WalletService(clock, audit, storage);
   const issuers = new IssuerService(clock, audit, storage);
-  const auth = new AuthService(clock, audit, wallets, storage);
+  const auth = new AuthService(clock, audit, wallets, storage, opts.mail, opts.mfaKey);
   const common = { clock, audit, issuers, wallets, gateway: opts.gateway, guard, storage };
   const portfolio = new PortfolioService(common);
   const exchange = new ExchangeService(common);
-  const redemption = new RedemptionService(common);
+  const redemption = new RedemptionService({ ...common, ...(opts.escrowWindowSecs ? { escrowWindowSecs: opts.escrowWindowSecs } : {}) });
   const reconciliation = new ReconciliationService({ clock, audit, guard, storage });
   const disputes = new DisputeService({ clock, audit, exchange, redemption, storage });
+  /** registered but NOT started; main.ts starts it (tests drive it directly) */
+  const jobs = new JobRunner({ clock, ...(opts.jobLock ? { lock: opts.jobLock } : {}), ...(opts.scheduler ? { scheduler: opts.scheduler } : {}), ...(opts.log ? { log: opts.log } : {}) });
+  for (const j of defaultJobs({ exchange, disputes, redemption })) jobs.register(j);
+  // Core decides which issuers are trusted; a real gateway service must be fed that list or it refuses every asset.
+  const syncable = opts.gateway as { syncTrustedAssets?: (assets: { code: string; issuer: string }[]) => Promise<void> };
+  if (typeof syncable.syncTrustedAssets === 'function') {
+    jobs.register({ name: 'sync-trusted-assets', intervalMs: 30_000, run: async () => { await syncable.syncTrustedAssets!(((await issuers.trustedAssets()) as { code: string; issuer: string }[])); } });
+  }
   reconciliation.register((o, r) => exchange.onObservation(o, r));
   reconciliation.register((o, r) => redemption.onObservation(o, r));
   /** Resolves a bearer token to an actor; merchant accounts get their CURRENT merchantId (never stale). */
@@ -37,7 +49,7 @@ export function createApp(opts: { gateway: StellarGateway; clock?: Clock; storag
     const mine = (await issuers.merchants.find((m) => m.ownerActorId === actor.id && m.status !== 'REJECTED'))[0];
     return mine ? { ...actor, merchantId: mine.id } : actor;
   }
-  return { disputes, portfolio, authenticate, auth, storage, clock, audit, guard, wallets, issuers, exchange, redemption, reconciliation };
+  return { jobs, disputes, portfolio, authenticate, auth, storage, clock, audit, guard, wallets, issuers, exchange, redemption, reconciliation };
 }
 
 export type App = ReturnType<typeof createApp>;

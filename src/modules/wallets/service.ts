@@ -99,6 +99,14 @@ export class WalletService {
     if (s) await this.sessions.put({ ...s, expiresAt: 0 });
   }
 
+  /** Ends every live session of an actor (e.g. after a password reset). Returns how many were revoked. */
+  async revokeAllFor(actorId: string): Promise<number> {
+    const now = this.clock.now().getTime();
+    const live = await this.sessions.find((s) => s.actor.id === actorId && s.expiresAt > now);
+    for (const s of live) await this.sessions.put({ ...s, expiresAt: 0 });
+    return live.length;
+  }
+
   /** TEST/DEV ONLY: mint a session for an arbitrary actor without credentials. Not reachable over HTTP. */
   async mintDevSession(actor: Actor): Promise<string> {
     return this.openSession(actor);

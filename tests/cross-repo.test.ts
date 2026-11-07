@@ -39,7 +39,7 @@ d('contract fixtures are identical in both repos', () => {
 });
 
 d('core + stellar gateway service, wired over real HTTP', () => {
-  async function rig() {
+  async function rig(opts: { escrow?: 'none' | 'fixture' } = {}) {
     const helpers = await import(/* @vite-ignore */ join(stellar, 'tests/helpers.ts'));
     const serverMod = await import(/* @vite-ignore */ join(stellar, 'src/service/server.ts'));
     const signing = await import(/* @vite-ignore */ join(stellar, 'src/settlement/signing.ts'));
@@ -49,11 +49,22 @@ d('core + stellar gateway service, wired over real HTTP', () => {
     await sw.seedLiquidity();
     const pending = new pendingMod.InMemoryPendingStore();
     const token = 'cross-repo-test-token-0123456789';
+    let escrow: unknown;
+    if (opts.escrow === 'fixture') {
+      // unbound-stellar's real SorobanRedemptionEscrow over its FixtureSorobanRpc TEST ADAPTER (no Soroban RPC)
+      const escrowMod = await import(/* @vite-ignore */ join(stellar, 'src/soroban/escrow.ts'));
+      const rpcMod = await import(/* @vite-ignore */ join(stellar, 'src/testing/fixture-soroban-rpc.ts'));
+      const rpc = new rpcMod.FixtureSorobanRpc();
+      rpc.sequences.set(sw.user.publicKey, '100');
+      rpc.sequences.set(sw.issuer.publicKey, '200');
+      escrow = new escrowMod.SorobanRedemptionEscrow({ rpc, contractId: 'CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR', registry: sw.registry });
+    }
     const server = serverMod.createGatewayServer({
       reader: sw.ledger, pathSource: sw.ledger, submitter: sw.ledger, lookup: sw.ledger, registry: sw.registry, pending, token, now: () => sw.clock.t,
+      ...(escrow ? { escrow } : {}),
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-    const gateway = new HttpStellarGateway({ baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, token });
+    const gateway = new HttpStellarGateway({ baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, token, escrow: opts.escrow !== undefined });
     const clock = { now: () => new Date(sw.clock.t) };
     const app = createApp({ gateway, clock });
     return { sw, app, gateway, pending, signing, close: () => new Promise<void>((r) => server.close(() => r())) };
@@ -159,6 +170,41 @@ d('core + stellar gateway service, wired over real HTTP', () => {
       expect(after.state).toBe('RETURN_CONFIRMED');
       expect(sw.ledger.balanceOf(sw.user.publicKey, sw.SHOP)).toBe(700000000n);
       expect((await app.redemption.merchantConfirm(merchant, red.id, 'r')).state).toBe('FULFILLED');
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('escrow opted in but not configured on the gateway: ESCROW_UNAVAILABLE -> native return, end to end', async () => {
+    const r = await rig({ escrow: 'none' });
+    try {
+      const { user, merchant } = await onboard(r);
+      const { sw, app } = r;
+      const red = await app.redemption.create(user, { asset: sw.SHOP, amount: '30', holder: sw.user.publicKey }, 'cross-redeem-2', 'r');
+      expect(red.mode).toBe('NATIVE');
+      const signed = r.signing.signTransaction(red.unsignedXdr!, 'Test SDF Network ; September 2015', sw.user);
+      expect((await app.redemption.submitReturn(user, red.id, signed, 'r')).state).toBe('RETURN_CONFIRMED');
+      expect((await app.redemption.merchantConfirm(merchant, red.id, 'r')).state).toBe('FULFILLED');
+    } finally {
+      await r.close();
+    }
+  });
+
+  it('escrow configured: core receives a real, prepared Soroban open_return invocation the holder can sign', async () => {
+    const r = await rig({ escrow: 'fixture' });
+    try {
+      const { user } = await onboard(r);
+      const { sw, app } = r;
+      const red = await app.redemption.create(user, { asset: sw.SHOP, amount: '30', holder: sw.user.publicKey }, 'cross-redeem-3', 'r');
+      expect(red.mode).toBe('ESCROW');
+      expect(red.escrow?.contractId).toBe('CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR');
+      const { TransactionBuilder } = await import('@stellar/stellar-sdk');
+      const tx = TransactionBuilder.fromXDR(red.unsignedXdr!, 'Test SDF Network ; September 2015') as import('@stellar/stellar-sdk').Transaction;
+      expect(tx.operations[0]!.type).toBe('invokeHostFunction');
+      expect(tx.source).toBe(sw.user.publicKey);
+      expect(Buffer.from(tx.hash()).toString('hex')).toBe(red.returnTxHash);
+      // the holder (only) can sign it; the simulator cannot execute Soroban, so the flow stops here
+      expect(() => r.signing.signTransaction(red.unsignedXdr!, 'Test SDF Network ; September 2015', sw.user)).not.toThrow();
     } finally {
       await r.close();
     }

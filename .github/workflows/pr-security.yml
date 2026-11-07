@@ -1,20 +1,28 @@
 name: PR security gate
-on: { pull_request: { branches: [main] } }
-permissions: { contents: read }
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
 jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/dependency-review-action@v4
-        with: { fail-on-severity: moderate, fail-on-scopes: 'runtime, unknown' }
+        with:
+          fail-on-severity: moderate
+          fail-on-scopes: runtime, unknown
   malware-guard:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with: { fetch-depth: 0 }
+        with:
+          fetch-depth: 0
       - name: Reject executable, hidden, and obfuscated additions
-        env: { BASE_SHA: ${{ github.event.pull_request.base.sha }}, HEAD_SHA: ${{ github.event.pull_request.head.sha }} }
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           git diff --check "$BASE_SHA" "$HEAD_SHA"

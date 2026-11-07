@@ -1,6 +1,6 @@
 /**
  * LIVE end-to-end run: core (HTTP) -> Stellar gateway -> Stellar Testnet + the deployed redemption escrow.
- * Not a unit test; needs both services running (see Unbound-stellar/AGENTS.md Phase 2) and the Testnet accounts
+ * Not a unit test; needs both services running (the gateway from Unbound-stellar and core; see docs/DEPLOYMENT.md in Unbound-stellar) and the Testnet accounts
  * created by Unbound-stellar/scripts/testnet-smoke.ts. Testnet and synthetic data only.
  *
  *   node --env-file=.env --import tsx scripts/testnet-e2e.ts          # onboard, redeem+confirm, redeem+reject, open the expiry case

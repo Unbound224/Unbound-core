@@ -42,7 +42,7 @@ The mobile app does not own merchant verification, and the core API does not rei
 ## Integration test order
 1. Each repository passes independent lint/build/unit tests.
 2. Publish local SDKs and generated interfaces.
-3. Run network local/sandbox or Testnet tests.
+3. Run local-network or Testnet tests.
 4. Run API/service orchestration tests with fake wallets and then test wallets.
 5. Run frontend/device E2E.
 6. Verify failure and recovery (network loss, duplicate event, stale authorization, partial settlement).

@@ -1,9 +1,8 @@
 # Changelog
 
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions are tagged by the maintainer. Testnet only;
-no production deployment exists.
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Testnet only; no production deployment exists.
 
-## [Unreleased]
+## [0.1.0] - 2026-11-06 - Testnet prototype
 
 ### Added
 - Admin TOTP MFA (`/v1/auth/mfa/enroll|activate|disable`, optional `code` on login, `MFA_REQUIRED` error, secrets sealed with
@@ -25,6 +24,6 @@ no production deployment exists.
 ### Changed
 - Merchant confirm answers 202 while an escrow release waits for the ledger.
 
-## [0.1.0] - pre-release scaffold
+## Earlier work (fake gateway only)
 - Issuer verification, signed policies, exchange intents, reconciliation, redemptions, disputes, SQLite storage,
   OpenAPI 3.1 snapshot.

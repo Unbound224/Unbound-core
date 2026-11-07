@@ -1,5 +1,5 @@
 # DEV ONLY. Runs unbound-core with durable SQLite storage in a named volume.
-# Syntax-checked with `docker compose config` only; containers have NOT been built or run (no Docker daemon in the authoring sandbox).
+# Syntax-checked with `docker compose config`; the container has not been built or run by the maintainers yet.
 # Set credentials in your shell or an untracked .env (never commit them):
 #   BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD (>= 12 chars)
 # Optional: STELLAR_GATEWAY_URL, STELLAR_GATEWAY_TOKEN to use a running unbound-stellar gateway.
